@@ -11,29 +11,57 @@
 SimTradeData 采用分层模块化架构：
 
 ```
-SimTradeData
-├── 数据层 (Data Layer)
-│   ├── 数据库管理 (Database)
-│   ├── 缓存管理 (Cache)
-│   └── 数据源 (Data Sources)
-├── 业务层 (Business Layer)
-│   ├── API管理 (API Manager)
-│   ├── 多市场管理 (Multi-Market)
-│   ├── 扩展数据 (Extended Data)
-│   └── 数据预处理 (Preprocessor)
-├── 接口层 (Interface Layer)
-│   ├── PTrade适配器 (PTrade Adapter)
-│   ├── REST API (REST Server)
-│   └── API网关 (API Gateway)
-├── 性能层 (Performance Layer)
-│   ├── 查询优化 (Query Optimizer)
-│   ├── 并发处理 (Concurrent Processor)
-│   └── 性能监控 (Performance Monitor)
-└── 监控层 (Monitoring Layer)
-    ├── 系统监控 (System Monitor)
-    ├── 日志管理 (Log Manager)
-    ├── 健康检查 (Health Checker)
-    └── 运维工具 (Ops Tools)
+SimTradeData/
+├── 📁 simtradedata/                    # 核心包
+│   ├── 📁 database/                    # 数据库层
+│   │   ├── manager.py                  # 数据库管理器
+│   │   └── schema.py                   # 数据库架构(11个专用表)
+│   ├── 📁 api/                         # API路由层
+│   │   ├── router.py                   # 高性能查询路由器
+│   │   ├── cache.py                    # 查询缓存
+│   │   ├── formatters.py               # 结果格式化器
+│   │   └── query_builders.py           # SQL查询构建器
+│   ├── 📁 data_sources/                # 数据源层
+│   │   ├── manager.py                  # 数据源管理器
+│   │   ├── akshare_adapter.py          # AkShare适配器
+│   │   ├── baostock_adapter.py         # BaoStock适配器
+│   │   └── qstock_adapter.py           # QStock适配器
+│   ├── 📁 sync/                        # 数据同步层
+│   │   ├── manager.py                  # 同步管理器
+│   │   ├── incremental.py              # 增量同步
+│   │   ├── gap_detector.py             # 缺口检测
+│   │   └── validator.py                # 数据验证
+│   ├── 📁 preprocessor/                # 数据预处理层
+│   │   ├── engine.py                   # 数据处理引擎
+│   │   ├── cleaner.py                  # 数据清洗
+│   │   ├── converter.py                # 格式转换
+│   │   └── indicators.py               # 技术指标
+│   ├── 📁 interfaces/                  # 接口层
+│   │   ├── ptrade_api.py               # PTrade兼容API
+│   │   ├── rest_api.py                 # REST API服务器
+│   │   └── api_gateway.py              # API网关
+│   ├── 📁 performance/                 # 性能优化层
+│   │   ├── query_optimizer.py          # 查询优化器
+│   │   └── cache_manager.py            # 缓存管理器
+│   ├── 📁 markets/                     # 多市场支持
+│   │   ├── multi_market.py             # 多市场管理器
+│   │   ├── hk_market.py                # 港股市场
+│   │   └── us_market.py                # 美股市场
+│   ├── 📁 extended_data/               # 扩展数据
+│   │   ├── sector_data.py              # 板块数据
+│   │   ├── etf_data.py                 # ETF数据
+│   │   └── technical_indicators.py     # 技术指标
+│   └── 📁 config/                      # 配置管理
+│       ├── manager.py                  # 配置管理器
+│       └── defaults.py                 # 默认配置
+├── 📁 tests/                           # 测试套件
+│   ├── test_api_router.py              # API路由器测试
+│   ├── test_sync_basic.py              # 数据同步测试
+│   ├── test_database.py                # 数据库测试
+│   └── test_integration_simple.py     # 集成测试
+├── 📁 docs/                            # 文档
+├── 📁 scripts/                         # 工具脚本
+└── 📁 examples/                        # 示例代码
 ```
 
 ### 核心设计原则

@@ -11,7 +11,7 @@ SimTradeData 是一个高性能的金融数据缓存和管理系统，专为量�
 ```bash
 # 克隆项目
 git clone <repository-url>
-cd SimTradeLab
+cd SimTradeData
 
 # 安装依赖
 poetry install
@@ -20,21 +20,41 @@ poetry install
 poetry shell
 ```
 
+### 初始化数据库
+
+```bash
+# 创建数据库和表结构
+poetry run python scripts/init_database.py --db-path data/simtradedata.db
+```
+
 ### 基本使用
 
 ```python
-from simtradedata import PTradeCacheManager
+from simtradedata.database.manager import DatabaseManager
+from simtradedata.api.router import APIRouter
+from simtradedata.config.manager import Config
 
-# 初始化缓存管理器
-cache_manager = PTradeCacheManager()
+# 初始化核心组件
+config = Config()
+db_manager = DatabaseManager("data/simtradedata.db")
+api_router = APIRouter(db_manager, config)
 
-# 获取股票数据
-data = cache_manager.get_daily_data('000001.SZ', '2024-01-01', '2024-01-31')
+# 获取历史数据
+data = api_router.get_history(
+    symbols=['000001.SZ'],
+    start_date='2024-01-01',
+    end_date='2024-01-31',
+    frequency='1d'
+)
 print(data.head())
 
 # 获取股票基本信息
-info = cache_manager.get_stock_info('000001.SZ')
+info = api_router.get_stock_info(['000001.SZ'])
 print(info)
+
+# 获取快照数据
+snapshot = api_router.get_snapshot(['000001.SZ'])
+print(snapshot)
 ```
 
 ## 🏗️ 系统架构
@@ -42,10 +62,14 @@ print(info)
 SimTradeData 采用模块化设计，主要包含以下组件：
 
 ### 核心模块
-- **数据库管理** (`database`): SQLite数据库操作和连接管理
-- **缓存管理** (`cache`): 多级缓存策略和数据缓存
-- **API管理** (`api`): 统一的数据访问接口
+- **数据库管理** (`database`): SQLite数据库操作和连接管理，11个专用表设计
+- **API路由器** (`api`): 高性能查询路由器，支持缓存和并发处理
+- **数据源管理** (`data_sources`): 多数据源适配器，智能故障转移
+- **数据同步** (`sync`): 增量同步、缺口检测、断点续传
+- **数据预处理** (`preprocessor`): 数据清洗、融合、质量监控
 - **配置管理** (`config`): 系统配置和参数管理
+- **性能优化** (`performance`): 查询优化、缓存管理
+- **接口层** (`interfaces`): PTrade兼容API、REST API
 
 ### 数据模块
 - **数据源** (`data_sources`): 多数据源支持和数据获取

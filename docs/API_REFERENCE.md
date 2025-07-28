@@ -6,47 +6,76 @@ SimTradeData 提供多种API接口，包括PTrade兼容接口、REST API和Pytho
 
 ## 🐍 Python API
 
-### 核心API管理器
+### 核心API路由器
 
-#### APIManager
+#### APIRouter
 
-主要的数据访问接口，提供统一的数据操作方法。
+高性能的数据查询路由器，提供统一的数据访问接口，支持缓存、并发和查询优化。
 
 ```python
-from simtradedata.api import APIManager
-from simtradedata.database import DatabaseManager
-from simtradedata.cache import CacheManager
-from simtradedata.config import Config
+from simtradedata.api.router import APIRouter
+from simtradedata.database.manager import DatabaseManager
+from simtradedata.config.manager import Config
 
-# 初始化
+# 初始化核心组件
 config = Config()
-db_manager = DatabaseManager(config)
-cache_manager = CacheManager(config)
-api_manager = APIManager(db_manager, cache_manager, config)
+db_manager = DatabaseManager("data/simtradedata.db")
+api_router = APIRouter(db_manager, config)
 ```
 
-##### 股票数据方法
+#### 核心特性
 
-**get_daily_data(symbol, start_date, end_date)**
-- 获取日线数据
+- **高性能查询**: 优化的SQL生成和执行
+- **智能缓存**: 多级缓存策略，提升查询速度
+- **并发支持**: 支持高并发查询请求
+- **格式化输出**: 自动格式化为DataFrame或JSON
+- **错误处理**: 完善的异常处理和日志记录
+
+### 主要API方法
+
+#### 历史数据查询
+
+**get_history(symbols, start_date, end_date, frequency="1d", fields=None)**
+- 获取历史行情数据，支持多股票、多频率查询
 - 参数:
-  - `symbol` (str): 股票代码，如 '000001.SZ'
+  - `symbols` (list[str]): 股票代码列表，如 ['000001.SZ', '000002.SZ']
   - `start_date` (str): 开始日期，格式 'YYYY-MM-DD'
   - `end_date` (str): 结束日期，格式 'YYYY-MM-DD'
+  - `frequency` (str): 数据频率，支持 '1d', '5m', '15m', '30m', '60m'
+  - `fields` (list[str], optional): 指定返回字段
 - 返回: pandas.DataFrame
 
 ```python
-data = api_manager.get_daily_data('000001.SZ', '2024-01-01', '2024-01-31')
+# 获取单只股票日线数据
+data = api_router.get_history(
+    symbols=['000001.SZ'],
+    start_date='2024-01-01',
+    end_date='2024-01-31',
+    frequency='1d'
+)
+
+# 获取多只股票分钟数据
+data = api_router.get_history(
+    symbols=['000001.SZ', '000002.SZ'],
+    start_date='2024-01-01',
+    end_date='2024-01-31',
+    frequency='5m'
+)
 ```
 
-**get_minute_data(symbol, start_datetime, end_datetime, frequency)**
-- 获取分钟数据
+#### 实时数据查询
+
+**get_snapshot(symbols, fields=None)**
+- 获取股票快照数据
 - 参数:
-  - `symbol` (str): 股票代码
-  - `start_datetime` (str): 开始时间，格式 'YYYY-MM-DD HH:MM:SS'
-  - `end_datetime` (str): 结束时间，格式 'YYYY-MM-DD HH:MM:SS'
-  - `frequency` (str): 频率，'1m', '5m', '15m', '30m', '60m'
+  - `symbols` (list[str]): 股票代码列表
+  - `fields` (list[str], optional): 指定返回字段
 - 返回: pandas.DataFrame
+
+```python
+# 获取股票快照
+snapshot = api_router.get_snapshot(['000001.SZ', '000002.SZ'])
+```
 
 ```python
 data = api_manager.get_minute_data('000001.SZ', '2024-01-01 09:30:00', '2024-01-01 15:00:00', '5m')

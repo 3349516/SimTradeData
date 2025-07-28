@@ -103,27 +103,70 @@ SimTradeData 是一个零技术债务的高性能金融数据系统，专为PTra
 
 ## 🚀 快速开始
 
-### 创建数据库
+### 1. 环境准备
 ```bash
-python scripts/init_database.py --db-path data/simtradedata.db
+# 安装依赖
+poetry install
+
+# 激活虚拟环境
+poetry shell
 ```
 
-### 开始使用
+### 2. 初始化数据库
+```bash
+# 创建数据库和表结构
+poetry run python scripts/init_database.py --db-path data/simtradedata.db
+```
+
+### 3. 基础使用
 ```python
-from simtradedata.database import DatabaseManager
-from simtradedata.preprocessor import DataProcessingEngine
+from simtradedata.database.manager import DatabaseManager
+from simtradedata.api.router import APIRouter
+from simtradedata.config.manager import Config
 
-# 初始化
+# 初始化核心组件
+config = Config()
 db_manager = DatabaseManager("data/simtradedata.db")
-processing_engine = DataProcessingEngine(db_manager, data_source_manager, config)
+api_router = APIRouter(db_manager, config)
 
-# 处理数据
-result = processing_engine.process_stock_data("000001.SZ", start_date, end_date)
+# 查询历史数据
+data = api_router.get_history(
+    symbols=["000001.SZ", "000002.SZ"],
+    start_date="2024-01-01",
+    end_date="2024-01-31",
+    frequency="1d"
+)
+
+# 查询股票信息
+stock_info = api_router.get_stock_info(["000001.SZ"])
 ```
 
-### 验证系统
+### 4. 数据同步
+```python
+from simtradedata.sync.manager import SyncManager
+
+# 初始化同步管理器
+sync_manager = SyncManager(db_manager, data_source_manager, config)
+
+# 同步股票数据
+sync_manager.sync_symbols(
+    symbols=["000001.SZ"],
+    start_date="2024-01-01",
+    end_date="2024-01-31",
+    frequency="1d"
+)
+```
+
+### 5. 运行测试
 ```bash
-poetry run python tests/test_new_architecture.py validate
+# 运行核心功能测试
+poetry run python -m pytest tests/test_api_router.py -v
+
+# 运行数据同步测试
+poetry run python -m pytest tests/test_sync_basic.py -v
+
+# 运行集成测试
+poetry run python -m pytest tests/test_integration_simple.py -v
 ```
 
 ## 📖 详细文档

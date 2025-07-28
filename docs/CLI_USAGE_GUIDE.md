@@ -1,20 +1,41 @@
-# CLI 使用指南
+# SimTradeData CLI 使用指南
 
-SimTradeData 提供了命令行接口（CLI）来执行各种数据管理任务。
+SimTradeData 提供了强大的命令行接口（CLI）来执行各种数据管理任务，包括数据库初始化、数据同步、查询和系统监控。
 
 ## 🚀 快速开始
 
-### 安装和初始化
+### 环境准备
 
 ```bash
+# 克隆项目
+git clone <repository-url>
+cd SimTradeData
+
 # 安装依赖
 poetry install
 
-# 初始化数据库
-poetry run python scripts/init_database.py
+# 激活虚拟环境
+poetry shell
+```
 
-# 验证安装
-poetry run python -m simtradedata --version
+### 数据库初始化
+
+```bash
+# 创建数据库和表结构
+poetry run python scripts/init_database.py --db-path data/simtradedata.db
+
+# 验证数据库创建
+ls -la data/simtradedata.db
+```
+
+### 验证安装
+
+```bash
+# 检查CLI可用性
+poetry run python -m simtradedata --help
+
+# 运行基础测试
+poetry run python -m pytest tests/test_database.py -v
 ```
 
 ## 📋 命令概览
