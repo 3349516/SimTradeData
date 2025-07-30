@@ -74,8 +74,9 @@ class TestPTradeCacheIntegration:
         # 测试缓存操作
         test_data = {"symbol": "000001.SZ", "price": 10.5}
         cache_manager.set("test_key", test_data, "test_type")
-        cached_data = cache_manager.get("test_key", "test_type")
-        assert cached_data == test_data
+        get_response = cache_manager.get("test_key", "test_type")
+        assert get_response["success"] == True
+        assert get_response["data"] == test_data
 
         # 3. 测试API路由器
         api_router = APIRouter(db_manager, config)
@@ -161,8 +162,9 @@ class TestPTradeCacheIntegration:
         cache_manager.set(cache_key, result, "query_result")
 
         # 从缓存获取
-        cached_result = cache_manager.get(cache_key, "query_result")
-        assert cached_result == result
+        get_response = cache_manager.get(cache_key, "query_result")
+        assert get_response["success"] == True
+        assert get_response["data"] == result
 
         # 5. 测试查询优化器
         optimizer = QueryOptimizer(db_manager, config)
@@ -202,8 +204,9 @@ class TestPTradeCacheIntegration:
         cache_manager = CacheManager(config)
 
         # 测试获取不存在的缓存
-        result = cache_manager.get("non_existent_key", "test_type")
-        assert result is None
+        get_response = cache_manager.get("non_existent_key", "test_type")
+        assert get_response["success"] == True
+        assert get_response["data"] is None
 
         # 3. 测试查询优化器错误处理
         optimizer = QueryOptimizer(db_manager, config)

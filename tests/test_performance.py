@@ -128,24 +128,29 @@ class TestCacheManager:
         data_type = "test_data"
 
         # 设置缓存
-        success = cache_manager.set(key, value, data_type)
-        assert success == True
+        success_response = cache_manager.set(key, value, data_type)
+        assert success_response["success"] == True
+        assert success_response["data"] == True
 
         # 获取缓存
-        cached_value = cache_manager.get(key, data_type)
-        assert cached_value == value
+        get_response = cache_manager.get(key, data_type)
+        assert get_response["success"] == True
+        assert get_response["data"] == value
 
         # 检查存在性
-        exists = cache_manager.exists(key, data_type)
-        assert exists == True
+        exists_response = cache_manager.exists(key, data_type)
+        assert exists_response["success"] == True
+        assert exists_response["data"] == True
 
         # 删除缓存
-        deleted = cache_manager.delete(key, data_type)
-        assert deleted == True
+        delete_response = cache_manager.delete(key, data_type)
+        assert delete_response["success"] == True
+        assert delete_response["data"] == True
 
         # 验证删除
-        cached_value = cache_manager.get(key, data_type)
-        assert cached_value is None
+        get_after_delete = cache_manager.get(key, data_type)
+        assert get_after_delete["success"] == True
+        assert get_after_delete["data"] is None
 
         logger.info("✅ 缓存操作测试通过")
 
@@ -159,7 +164,9 @@ class TestCacheManager:
         cache_manager.set("key3", "value3", "realtime_data")
 
         # 验证缓存策略生效
-        strategies = cache_manager.get_cache_strategies()
+        strategies_response = cache_manager.get_cache_strategies()
+        assert strategies_response["success"] == True
+        strategies = strategies_response["data"]
         assert "stock_info" in strategies
         assert "daily_data" in strategies
         assert "realtime_data" in strategies
@@ -176,7 +183,9 @@ class TestCacheManager:
         cache_manager.get("nonexistent_key")
 
         # 获取统计信息
-        stats = cache_manager.get_cache_stats()
+        stats_response = cache_manager.get_cache_stats()
+        assert stats_response["success"] == True
+        stats = stats_response["data"]
 
         assert "cache_manager" in stats
         assert "l1_cache" in stats
@@ -205,8 +214,9 @@ def test_performance_integration():
 
     # 测试基本功能
     cache_manager.set("test_key", "test_value", "test_type")
-    cached_value = cache_manager.get("test_key", "test_type")
-    assert cached_value == "test_value"
+    get_response = cache_manager.get("test_key", "test_type")
+    assert get_response["success"] == True
+    assert get_response["data"] == "test_value"
 
     logger.info("✅ 性能模块集成测试通过")
 

@@ -17,27 +17,30 @@ except ImportError:
     np = None
     pd = None
 
-from ..config import Config
+from ..core.base_manager import BaseManager
 from ..database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
 
-class TechnicalIndicatorManager:
+class TechnicalIndicatorManager(BaseManager):
     """技术指标管理器"""
 
-    def __init__(self, db_manager: DatabaseManager, config: Config = None):
+    def __init__(self, db_manager: DatabaseManager = None, config=None, **dependencies):
         """
         初始化技术指标管理器
 
         Args:
             db_manager: 数据库管理器
             config: 配置对象
+            **dependencies: 其他依赖对象
         """
+        # 获取数据库管理器 - 在super().__init__前设置
         self.db_manager = db_manager
-        self.config = config or Config()
+        if not self.db_manager:
+            raise ValueError("数据库管理器不能为空")
 
-        # 内置技术指标
+        # 内置技术指标 - 在super().__init__前设置
         self.builtin_indicators = {
             "ma": self._calculate_ma,  # 移动平均线
             "ema": self._calculate_ema,  # 指数移动平均线
@@ -51,6 +54,9 @@ class TechnicalIndicatorManager:
             "williams_r": self._calculate_williams_r,  # 威廉指标
         }
 
+        # 调用BaseManager初始化
+        super().__init__(config=config, db_manager=db_manager, **dependencies)
+
         # 自定义指标
         self.custom_indicators = {}
 
@@ -58,7 +64,15 @@ class TechnicalIndicatorManager:
         self.cache_enabled = self.config.get("indicators.cache_enabled", True)
         self.cache_ttl = self.config.get("indicators.cache_ttl", 3600)  # 1小时
 
-        logger.info("技术指标管理器初始化完成")
+        self.logger.info("技术指标管理器初始化完成")
+
+    def _init_components(self):
+        """初始化技术指标组件"""
+        pass  # 组件初始化在__init__中完成
+
+    def _get_required_attributes(self) -> list:
+        """获取必需属性列表"""
+        return ["db_manager", "builtin_indicators"]
 
     def calculate_indicator(
         self,

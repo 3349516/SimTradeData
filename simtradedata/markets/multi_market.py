@@ -8,7 +8,7 @@ import logging
 from datetime import date
 from typing import Any, Dict, List, Optional
 
-from ..config import Config
+from ..core.base_manager import BaseManager
 from ..database import DatabaseManager
 from .hk_market import HKMarketAdapter
 from .us_market import USMarketAdapter
@@ -16,22 +16,30 @@ from .us_market import USMarketAdapter
 logger = logging.getLogger(__name__)
 
 
-class MultiMarketManager:
+class MultiMarketManager(BaseManager):
     """多市场管理器"""
 
-    def __init__(self, db_manager: DatabaseManager, config: Config = None):
+    def __init__(self, db_manager: DatabaseManager = None, config=None, **dependencies):
         """
         初始化多市场管理器
 
         Args:
             db_manager: 数据库管理器
             config: 配置对象
+            **dependencies: 其他依赖对象
         """
+        # 获取数据库管理器 - 在super().__init__前设置
         self.db_manager = db_manager
-        self.config = config or Config()
+        if not self.db_manager:
+            raise ValueError("数据库管理器不能为空")
 
-        # 初始化市场适配器
+        # 初始化市场适配器 - 在super().__init__前设置
         self.adapters = {}
+
+        # 调用BaseManager初始化
+        super().__init__(config=config, db_manager=db_manager, **dependencies)
+
+        # 初始化适配器
         self._init_adapters()
 
         # 市场配置
@@ -40,7 +48,17 @@ class MultiMarketManager:
             "multi_market.enabled_markets", ["SZ", "SS", "HK", "US"]
         )
 
-        logger.info(f"多市场管理器初始化完成，支持市场: {list(self.adapters.keys())}")
+        self.logger.info(
+            f"多市场管理器初始化完成，支持市场: {list(self.adapters.keys())}"
+        )
+
+    def _init_components(self):
+        """初始化多市场组件"""
+        pass  # 组件初始化在__init__中完成
+
+    def _get_required_attributes(self) -> list:
+        """获取必需属性列表"""
+        return ["db_manager", "adapters"]
 
     def _init_adapters(self):
         """初始化市场适配器"""

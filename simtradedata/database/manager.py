@@ -13,21 +13,33 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from ..core.base_manager import BaseManager
+
 logger = logging.getLogger(__name__)
 
 
-class DatabaseManager:
+class DatabaseManager(BaseManager):
     """SQLite数据库管理器"""
 
-    def __init__(self, db_path: str, **kwargs):
+    def __init__(self, db_path: str = None, config=None, **kwargs):
         """
         初始化数据库管理器
 
         Args:
             db_path: 数据库文件路径
+            config: 配置对象
             **kwargs: SQLite连接参数
         """
-        self.db_path = Path(db_path)
+        # 数据库路径处理 - 在super().__init__前设置
+        if db_path:
+            self.db_path = Path(db_path)
+        else:
+            # 从配置中获取数据库路径需要先创建临时配置
+            from ..config import Config
+
+            temp_config = config or Config()
+            db_path = temp_config.get("database.path", "data/simtradedata.db")
+            self.db_path = Path(db_path)
 
         # 只保留sqlite3.connect()支持的参数
         valid_sqlite_params = {
@@ -51,6 +63,9 @@ class DatabaseManager:
             if key in valid_sqlite_params:
                 self.connection_kwargs[key] = value
 
+        # 调用BaseManager初始化
+        super().__init__(config=config, **kwargs)
+
         # 线程本地存储
         self._local = threading.local()
 
@@ -60,7 +75,15 @@ class DatabaseManager:
         # 初始化数据库
         self._initialize_database()
 
-        logger.info(f"数据库管理器初始化完成: {self.db_path}")
+        self.logger.info(f"数据库管理器初始化完成: {self.db_path}")
+
+    def _init_components(self):
+        """初始化数据库组件"""
+        pass  # 组件初始化在__init__中完成
+
+    def _get_required_attributes(self) -> list:
+        """获取必需属性列表"""
+        return ["db_path", "connection_kwargs"]
 
     def _initialize_database(self):
         """初始化数据库设置"""

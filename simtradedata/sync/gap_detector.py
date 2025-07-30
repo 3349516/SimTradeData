@@ -10,15 +10,16 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List
 
 from ..config import Config
+from ..core import BaseManager
 from ..database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
 
-class GapDetector:
+class GapDetector(BaseManager):
     """数据缺口检测器"""
 
-    def __init__(self, db_manager: DatabaseManager, config: Config = None):
+    def __init__(self, db_manager: DatabaseManager, config: Config = None, **kwargs):
         """
         初始化缺口检测器
 
@@ -26,15 +27,19 @@ class GapDetector:
             db_manager: 数据库管理器
             config: 配置对象
         """
+        super().__init__(config=config, **kwargs)
         self.db_manager = db_manager
-        self.config = config or Config()
 
+    def _init_specific_config(self):
+        """初始化缺口检测器特定配置"""
         # 检测配置
-        self.max_gap_days = self.config.get("gap_detection.max_gap_days", 5)
-        self.min_data_quality = self.config.get("gap_detection.min_data_quality", 60)
-        self.check_frequencies = self.config.get("gap_detection.frequencies", ["1d"])
-        self.exclude_weekends = self.config.get("gap_detection.exclude_weekends", True)
+        self.max_gap_days = self._get_config("gap_detection.max_gap_days", 5)
+        self.min_data_quality = self._get_config("gap_detection.min_data_quality", 60)
+        self.check_frequencies = self._get_config("gap_detection.frequencies", ["1d"])
+        self.exclude_weekends = self._get_config("gap_detection.exclude_weekends", True)
 
+    def _init_components(self):
+        """初始化组件"""
         # 支持的表格和对应的日期字段
         self.supported_tables = {
             "market_data": {
@@ -64,7 +69,11 @@ class GapDetector:
             },
         }
 
-        logger.info("数据缺口检测器初始化完成")
+        self.logger.info("数据缺口检测器初始化完成")
+
+    def _get_required_attributes(self) -> List[str]:
+        """必需属性列表"""
+        return ["supported_tables"]
 
     def detect_all_tables_gaps(
         self,

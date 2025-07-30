@@ -6,10 +6,12 @@
 
 # 标准库导入
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List
 
 # 项目内导入
-from ..config import Config
+if TYPE_CHECKING:
+    pass
+
 from .config_mixin import ConfigMixin
 from .logging_mixin import LoggingMixin
 
@@ -25,7 +27,7 @@ class BaseManager(ABC, ConfigMixin, LoggingMixin):
     - 生命周期管理
     """
 
-    def __init__(self, config: Config = None, **dependencies):
+    def __init__(self, config=None, **dependencies):
         """统一的初始化模式
 
         Args:
@@ -51,9 +53,13 @@ class BaseManager(ABC, ConfigMixin, LoggingMixin):
         # 6. 初始化日志
         self._log_initialization()
 
-    def _init_config(self, config: Config = None) -> Config:
+    def _init_config(self, config=None):
         """统一配置初始化"""
-        config = config or Config()
+        if config is None:
+            # 动态导入Config避免循环导入
+            from ..config import Config
+
+            config = Config()
         # 设置配置前缀，用于获取模块特定配置
         self._config_prefix = self._get_config_prefix()
         return config

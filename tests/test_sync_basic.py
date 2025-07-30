@@ -27,7 +27,17 @@ class TestBasicSync:
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
 
-        db_manager = DatabaseManager(db_path)
+        # 使用BaseManager架构的DatabaseManager
+        config = Config()
+        db_manager = DatabaseManager(db_path, config=config)
+
+        # 验证BaseManager初始化
+        assert hasattr(db_manager, "config"), "DatabaseManager应该有config属性"
+        assert hasattr(db_manager, "logger"), "DatabaseManager应该有logger属性"
+        assert hasattr(db_manager, "timeout"), "DatabaseManager应该有timeout配置"
+        assert hasattr(
+            db_manager, "max_retries"
+        ), "DatabaseManager应该有max_retries配置"
 
         # 创建基础表结构
         db_manager.execute(
@@ -73,7 +83,6 @@ class TestBasicSync:
         )
 
         # 插入测试用的交易日历数据
-        # 注意：这只是测试数据，生产环境应使用正确的交易日历数据源
         trading_days = []
         start_date = date(2024, 1, 1)
         for i in range(30):
@@ -90,6 +99,7 @@ class TestBasicSync:
         yield db_manager
 
         # 清理
+        db_manager.close()
         Path(db_path).unlink(missing_ok=True)
 
     def test_incremental_sync_basic(self, temp_db):
@@ -107,6 +117,14 @@ class TestBasicSync:
 
         config = Config()
         gap_detector = GapDetector(temp_db, config)
+
+        # 验证GapDetector是否继承了BaseManager
+        if hasattr(gap_detector, "config"):
+            logger.info("✅ GapDetector使用BaseManager架构")
+            assert hasattr(gap_detector, "logger"), "GapDetector应该有logger属性"
+            assert hasattr(gap_detector, "timeout"), "GapDetector应该有timeout配置"
+        else:
+            logger.info("⚠️ GapDetector未使用BaseManager架构")
 
         # 插入一些有缺口的测试数据
         test_data = [

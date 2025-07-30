@@ -8,25 +8,33 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from ..config import Config
+from ..core.base_manager import BaseManager
 from ..database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
 
-class SectorDataManager:
+class SectorDataManager(BaseManager):
     """板块数据管理器"""
 
-    def __init__(self, db_manager: DatabaseManager, config: Config = None):
+    def __init__(self, db_manager: DatabaseManager = None, config=None, **dependencies):
         """
         初始化板块数据管理器
 
         Args:
             db_manager: 数据库管理器
             config: 配置对象
+            **dependencies: 其他依赖对象
         """
+        # 获取数据库管理器 - 在super().__init__前设置
         self.db_manager = db_manager
-        self.config = config or Config()
+        if not self.db_manager:
+            raise ValueError("数据库管理器不能为空")
+
+        # 调用BaseManager初始化
+        super().__init__(config=config, db_manager=db_manager, **dependencies)
+
+        self.logger.info("板块数据管理器初始化完成")
 
         # 行业分类标准
         self.industry_standards = {
@@ -54,7 +62,13 @@ class SectorDataManager:
             "strategy": "策略指数",
         }
 
-        logger.info("板块数据管理器初始化完成")
+    def _init_components(self):
+        """初始化板块数据组件"""
+        pass  # 组件初始化在__init__中完成
+
+    def _get_required_attributes(self) -> list:
+        """获取必需属性列表"""
+        return ["db_manager"]
 
     def save_industry_classification(self, classification_data: Dict[str, Any]) -> bool:
         """

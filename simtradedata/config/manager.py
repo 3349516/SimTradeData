@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional, Union
 
 import yaml
 
+from ..core.base_manager import BaseManager
 from .defaults import get_default_config
 
 logger = logging.getLogger(__name__)
@@ -270,16 +271,54 @@ class Config:
         return self.get("api.enabled_apis", [])
 
 
-class ConfigManager:
+class ConfigManager(BaseManager):
     """配置管理器"""
 
     _instance: Optional["ConfigManager"] = None
     _config: Optional[Config] = None
 
-    def __new__(cls):
+    def __new__(cls, config=None, **dependencies):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
+
+    def __init__(self, config=None, **dependencies):
+        """
+        初始化配置管理器
+
+        Args:
+            config: 配置对象或路径
+            **dependencies: 依赖对象
+        """
+        # 避免重复初始化
+        if hasattr(self, "_initialized"):
+            return
+
+        # 如果config是字符串，则视为配置文件路径
+        if isinstance(config, str):
+            config_path = config
+            config = None
+        else:
+            config_path = None
+
+        # 调用BaseManager初始化
+        super().__init__(config=config, **dependencies)
+
+        # 如果提供了配置路径，则加载配置
+        if config_path:
+            self._config = Config(config_path)
+        elif self._config is None:
+            self._config = self.config
+
+        self._initialized = True
+
+    def _init_components(self):
+        """初始化配置组件"""
+        pass  # ConfigManager没有需要初始化的组件
+
+    def _get_required_attributes(self) -> list:
+        """获取必需属性列表"""
+        return ["_config"]
 
     @classmethod
     def initialize(
@@ -295,8 +334,11 @@ class ConfigManager:
         Returns:
             ConfigManager: 配置管理器实例
         """
-        instance = cls()
-        instance._config = Config(config_path, config_dict)
+        if config_path:
+            instance = cls(config=config_path)
+        else:
+            config_obj = Config(config_path, config_dict)
+            instance = cls(config=config_obj)
         return instance
 
     @classmethod
@@ -307,7 +349,7 @@ class ConfigManager:
         return cls._instance
 
     @property
-    def config(self) -> Config:
+    def config_obj(self) -> Config:
         """获取配置对象"""
         if self._config is None:
             raise RuntimeError("配置未初始化")
@@ -323,11 +365,11 @@ class ConfigManager:
 
     def get(self, key: str, default: Any = None) -> Any:
         """获取配置值"""
-        return self.config.get(key, default)
+        return self.config_obj.get(key, default)
 
     def set(self, key: str, value: Any):
         """设置配置值"""
-        self.config.set(key, value)
+        self.config_obj.set(key, value)
 
     def save(self, file_path: Optional[str] = None):
         """保存配置"""
@@ -335,6 +377,6 @@ class ConfigManager:
             file_path = self._config.config_path
 
         if file_path:
-            self.config.save_to_file(file_path)
+            self.config_obj.save_to_file(file_path)
         else:
             raise ValueError("未指定保存路径")
