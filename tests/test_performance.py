@@ -2,10 +2,12 @@
 测试性能优化模块
 
 验证查询优化器、缓存管理器、并发处理器和性能监控器功能。
+使用真实对象而非mock进行测试。
 """
 
 import logging
-from unittest.mock import Mock
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -22,32 +24,61 @@ class TestQueryOptimizer:
     """测试查询优化器"""
 
     @pytest.fixture
-    def mock_db_manager(self):
-        """模拟数据库管理器"""
-        db_manager = Mock(spec=DatabaseManager)
+    def real_db_manager(self):
+        """创建真实数据库管理器"""
+        # 创建临时数据库
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
 
-        # 模拟查询结果
-        db_manager.fetchall.return_value = [
-            {"symbol": "000001.SZ", "close": 10.5, "trade_date": "2024-01-20"}
+        config = Config()
+        db_manager = DatabaseManager(db_path, config=config)
+
+        # 创建测试表
+        db_manager.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_data (
+                symbol TEXT NOT NULL,
+                trade_date TEXT NOT NULL,
+                close REAL,
+                volume INTEGER,
+                PRIMARY KEY (symbol, trade_date)
+            )
+        """
+        )
+
+        # 插入测试数据
+        test_data = [
+            ("000001.SZ", "2024-01-20", 10.5, 1000000),
+            ("000002.SZ", "2024-01-20", 12.8, 800000),
+            ("600000.SS", "2024-01-20", 8.6, 1200000),
         ]
 
-        return db_manager
+        db_manager.executemany(
+            "INSERT INTO daily_data (symbol, trade_date, close, volume) VALUES (?, ?, ?, ?)",
+            test_data,
+        )
 
-    def test_initialization(self, mock_db_manager):
+        yield db_manager
+
+        # 清理
+        db_manager.close()
+        Path(db_path).unlink(missing_ok=True)
+
+    def test_initialization(self, real_db_manager):
         """测试初始化"""
         config = Config()
-        optimizer = QueryOptimizer(mock_db_manager, config)
+        optimizer = QueryOptimizer(real_db_manager, config)
 
-        assert optimizer.db_manager is mock_db_manager
+        assert optimizer.db_manager is real_db_manager
         assert optimizer.config is config
         assert optimizer.enable_query_cache == True
         assert len(optimizer.query_patterns) > 0
 
         logger.info("✅ 查询优化器初始化测试通过")
 
-    def test_optimize_query(self, mock_db_manager):
+    def test_optimize_query(self, real_db_manager):
         """测试查询优化"""
-        optimizer = QueryOptimizer(mock_db_manager)
+        optimizer = QueryOptimizer(real_db_manager)
 
         # 测试基本查询优化
         sql = "SELECT * FROM daily_data WHERE symbol = '000001.SZ'"
@@ -58,9 +89,9 @@ class TestQueryOptimizer:
 
         logger.info("✅ 查询优化测试通过")
 
-    def test_execute_with_cache(self, mock_db_manager):
+    def test_execute_with_cache(self, real_db_manager):
         """测试带缓存的查询执行"""
-        optimizer = QueryOptimizer(mock_db_manager)
+        optimizer = QueryOptimizer(real_db_manager)
 
         sql = "SELECT * FROM daily_data WHERE symbol = ?"
         params = ("000001.SZ",)
@@ -77,9 +108,9 @@ class TestQueryOptimizer:
 
         logger.info("✅ 缓存查询执行测试通过")
 
-    def test_suggest_indexes(self, mock_db_manager):
+    def test_suggest_indexes(self, real_db_manager):
         """测试索引建议"""
-        optimizer = QueryOptimizer(mock_db_manager)
+        optimizer = QueryOptimizer(real_db_manager)
 
         # 获取索引建议
         suggestions = optimizer.suggest_indexes("daily_data")
@@ -90,9 +121,9 @@ class TestQueryOptimizer:
 
         logger.info("✅ 索引建议测试通过")
 
-    def test_get_optimizer_stats(self, mock_db_manager):
+    def test_get_optimizer_stats(self, real_db_manager):
         """测试获取优化器统计"""
-        optimizer = QueryOptimizer(mock_db_manager)
+        optimizer = QueryOptimizer(real_db_manager)
 
         stats = optimizer.get_optimizer_stats()
 
@@ -202,7 +233,25 @@ class TestCacheManager:
 def test_performance_integration():
     """测试性能模块集成"""
     config = Config()
-    db_manager = DatabaseManager(":memory:")
+
+    # 创建真实的内存数据库
+    db_manager = DatabaseManager(":memory:", config=config)
+
+    # 创建测试表
+    db_manager.execute(
+        """
+        CREATE TABLE IF NOT EXISTS test_table (
+            id INTEGER PRIMARY KEY,
+            symbol TEXT,
+            value REAL
+        )
+    """
+    )
+
+    # 插入测试数据
+    db_manager.execute(
+        "INSERT INTO test_table (symbol, value) VALUES (?, ?)", ("TEST", 100.0)
+    )
 
     # 测试查询优化器
     optimizer = QueryOptimizer(db_manager, config)
@@ -218,7 +267,108 @@ def test_performance_integration():
     assert get_response["success"] == True
     assert get_response["data"] == "test_value"
 
+    # 测试查询优化器与真实数据库的配合
+    result = optimizer.execute_with_cache(
+        "SELECT * FROM test_table WHERE symbol = ?", ("TEST",)
+    )
+    assert result is not None
+
+    # 清理
+    db_manager.close()
+
     logger.info("✅ 性能模块集成测试通过")
+
+
+@pytest.mark.integration
+def test_performance_real_workload():
+    """测试性能模块在真实工作负载下的表现"""
+    config = Config()
+
+    # 创建临时数据库
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+
+    try:
+        db_manager = DatabaseManager(db_path, config=config)
+
+        # 创建市场数据表
+        db_manager.execute(
+            """
+            CREATE TABLE IF NOT EXISTS market_data (
+                symbol TEXT NOT NULL,
+                trade_date TEXT NOT NULL,
+                close REAL,
+                volume INTEGER,
+                PRIMARY KEY (symbol, trade_date)
+            )
+        """
+        )
+
+        # 插入大量测试数据
+        symbols = [f"00000{i}.SZ" for i in range(1, 11)]
+        dates = [f"2024-01-{i:02d}" for i in range(1, 21)]
+
+        test_data = []
+        for symbol in symbols:
+            for date in dates:
+                test_data.append((symbol, date, 10.0 + len(test_data) * 0.1, 1000000))
+
+        db_manager.executemany(
+            "INSERT INTO market_data (symbol, trade_date, close, volume) VALUES (?, ?, ?, ?)",
+            test_data,
+        )
+
+        # 测试查询优化器
+        optimizer = QueryOptimizer(db_manager, config)
+
+        # 测试复杂查询的优化
+        sql = """
+            SELECT symbol, AVG(close) as avg_close, SUM(volume) as total_volume
+            FROM market_data 
+            WHERE trade_date >= '2024-01-10'
+            GROUP BY symbol
+        """
+
+        optimized_sql, params = optimizer.optimize_query(sql, ())
+        result = optimizer.execute_with_cache(optimized_sql, params)
+
+        assert result is not None
+        assert len(result) > 0
+
+        # 测试缓存效果
+        result2 = optimizer.execute_with_cache(optimized_sql, params)
+        assert optimizer.cache_stats["hits"] > 0
+
+        # 测试缓存管理器的批量操作
+        cache_manager = CacheManager(config)
+
+        # 缓存多个查询结果
+        for i, symbol in enumerate(symbols[:5]):
+            cache_key = f"symbol_data_{symbol}"
+            symbol_data = db_manager.fetchall(
+                "SELECT * FROM market_data WHERE symbol = ?", (symbol,)
+            )
+            cache_manager.set(cache_key, symbol_data, "market_data")
+
+        # 验证缓存命中
+        cached_result = cache_manager.get("symbol_data_000001.SZ", "market_data")
+        assert cached_result["success"] == True
+        assert cached_result["data"] is not None
+
+        # 获取统计信息
+        optimizer_stats = optimizer.get_optimizer_stats()
+        cache_stats = cache_manager.get_cache_stats()
+
+        assert optimizer_stats["cache_stats"]["hits"] > 0
+        assert cache_stats["success"] == True
+
+        logger.info("✅ 性能模块真实工作负载测试通过")
+
+    finally:
+        # 清理
+        if "db_manager" in locals():
+            db_manager.close()
+        Path(db_path).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

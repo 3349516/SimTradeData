@@ -388,7 +388,7 @@ class SyncManager(BaseManager):
             SELECT 
                 COUNT(*) as total_records,
                 COUNT(DISTINCT symbol) as total_symbols,
-                COUNT(DISTINCT trade_date) as total_dates,
+                COUNT(DISTINCT date) as total_dates,
                 AVG(quality_score) as avg_quality
             FROM market_data
             """
