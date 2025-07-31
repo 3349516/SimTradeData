@@ -705,18 +705,129 @@ class DataAggregator:
     def _generate_technical_overview(self, target_date: date) -> Dict[str, Any]:
         """生成技术指标概览"""
         try:
-            # 这里可以集成技术指标管理器的功能
-            # 暂时返回简化版本
+            # 获取市场主要指数的数据来分析整体趋势
+            major_indices = [
+                "000001.SZ",
+                "000002.SZ",
+                "600000.SS",
+                "600036.SS",
+            ]  # 代表性股票
+
+            # 获取最近30天的数据用于分析
+            start_date = target_date - timedelta(days=30)
+
+            price_changes = []
+            volumes = []
+
+            for symbol in major_indices:
+                try:
+                    # 获取最近的市场数据
+                    sql = """
+                    SELECT close, volume, change_percent 
+                    FROM market_data 
+                    WHERE symbol = ? AND date >= ? AND date <= ?
+                    ORDER BY date DESC 
+                    LIMIT 20
+                    """
+
+                    data = self.db_manager.fetchall(
+                        sql, (symbol, str(start_date), str(target_date))
+                    )
+
+                    if data:
+                        # 收集价格变化和成交量数据
+                        for row in data:
+                            if row["change_percent"] is not None:
+                                price_changes.append(float(row["change_percent"]))
+                            if row["volume"] is not None:
+                                volumes.append(float(row["volume"]))
+
+                except Exception as e:
+                    logger.warning(f"获取 {symbol} 技术数据失败: {e}")
+
+            # 分析市场情感
+            market_sentiment = "neutral"
+            trend_direction = "sideways"
+            volatility_level = "normal"
+
+            if price_changes:
+                avg_change = sum(price_changes) / len(price_changes)
+                sum(1 for x in price_changes if x > 0)
+                sum(1 for x in price_changes if x < 0)
+
+                # 判断市场情感
+                if avg_change > 1.0:
+                    market_sentiment = "bullish"
+                    trend_direction = "upward"
+                elif avg_change < -1.0:
+                    market_sentiment = "bearish"
+                    trend_direction = "downward"
+                else:
+                    market_sentiment = "neutral"
+                    trend_direction = "sideways"
+
+                # 判断波动性
+                if price_changes:
+                    price_std = (
+                        sum((x - avg_change) ** 2 for x in price_changes)
+                        / len(price_changes)
+                    ) ** 0.5
+                    if price_std > 3.0:
+                        volatility_level = "high"
+                    elif price_std < 1.0:
+                        volatility_level = "low"
+                    else:
+                        volatility_level = "normal"
+
+            # 简单的支撑阻力位计算（基于最近价格）
+            support_resistance = {"support": None, "resistance": None}
+
+            if price_changes:
+                # 获取最近的收盘价数据用于支撑阻力分析
+                recent_closes = []
+                for symbol in major_indices[:2]:  # 只用前两个代表性股票
+                    try:
+                        sql = "SELECT close FROM market_data WHERE symbol = ? AND date <= ? ORDER BY date DESC LIMIT 10"
+                        data = self.db_manager.fetchall(sql, (symbol, str(target_date)))
+                        for row in data:
+                            if row["close"]:
+                                recent_closes.append(float(row["close"]))
+                    except:
+                        pass
+
+                if recent_closes:
+                    support_resistance = {
+                        "support": round(
+                            min(recent_closes) * 0.98, 2
+                        ),  # 支撑位略低于最低价
+                        "resistance": round(
+                            max(recent_closes) * 1.02, 2
+                        ),  # 阻力位略高于最高价
+                    }
+
             return {
-                "market_sentiment": "neutral",
-                "trend_direction": "sideways",
-                "volatility_level": "normal",
-                "support_resistance": {"support": None, "resistance": None},
+                "market_sentiment": market_sentiment,
+                "trend_direction": trend_direction,
+                "volatility_level": volatility_level,
+                "support_resistance": support_resistance,
+                "analysis_date": str(target_date),
+                "data_points": len(price_changes),
+                "avg_change_percent": (
+                    round(sum(price_changes) / len(price_changes), 2)
+                    if price_changes
+                    else 0
+                ),
             }
 
         except Exception as e:
             logger.error(f"生成技术指标概览失败: {e}")
-            return {}
+            return {
+                "market_sentiment": "unknown",
+                "trend_direction": "unknown",
+                "volatility_level": "unknown",
+                "support_resistance": {"support": None, "resistance": None},
+                "error": str(e),
+            }
 
     def get_aggregator_stats(self) -> Dict[str, Any]:
         """获取聚合器统计信息"""

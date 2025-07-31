@@ -366,8 +366,54 @@ class CacheManager(BaseManager):
             return success
         else:
             # 清空特定类型的缓存
-            # 这里简化实现，实际应该根据键前缀删除
-            return True
+            success = True
+            try:
+                # 生成类型前缀
+                prefix = f"{data_type}:"
+
+                # 从L1缓存删除匹配的键
+                if hasattr(self.l1_cache, "keys"):
+                    keys_to_delete = [
+                        key for key in self.l1_cache.keys() if key.startswith(prefix)
+                    ]
+                    for key in keys_to_delete:
+                        del self.l1_cache[key]
+                else:
+                    # 如果l1_cache是字典类型
+                    keys_to_delete = [
+                        key for key in self.l1_cache if key.startswith(prefix)
+                    ]
+                    for key in keys_to_delete:
+                        del self.l1_cache[key]
+
+                # 从L2缓存删除匹配的键
+                l2_keys_to_delete = []
+                if self.l2_cache:
+                    if hasattr(self.l2_cache, "keys"):
+                        l2_keys_to_delete = [
+                            key
+                            for key in self.l2_cache.keys()
+                            if key.startswith(prefix)
+                        ]
+                        for key in l2_keys_to_delete:
+                            del self.l2_cache[key]
+                    else:
+                        # 如果l2_cache是字典类型
+                        l2_keys_to_delete = [
+                            key for key in self.l2_cache if key.startswith(prefix)
+                        ]
+                        for key in l2_keys_to_delete:
+                            del self.l2_cache[key]
+
+                self.logger.info(
+                    f"清理了 {len(keys_to_delete)} 个 L1 缓存项和 {len(l2_keys_to_delete)} 个 L2 缓存项，类型: {data_type}"
+                )
+
+            except Exception as e:
+                self.logger.error(f"清理特定类型缓存失败: {e}")
+                success = False
+
+            return success
 
     @unified_error_handler(return_dict=True)
     def exists(self, key: str, data_type: str = "default") -> bool:

@@ -33,13 +33,15 @@ class DataSourceManager(BaseManager):
         """
         super().__init__(config=config, **kwargs)
 
+    def _get_config_prefix(self) -> str:
+        """获取配置前缀"""
+        return "data_sources"
+
     def _init_specific_config(self):
         """初始化数据源管理器特定配置"""
-        self.max_retry_attempts = self._get_config("data_sources.max_retry_attempts", 3)
-        self.retry_delay = self._get_config("data_sources.retry_delay", 1)
-        self.health_check_interval = self._get_config(
-            "data_sources.health_check_interval", 300
-        )
+        self.max_retry_attempts = self._get_config("max_retry_attempts", 3)
+        self.retry_delay = self._get_config("retry_delay", 1)
+        self.health_check_interval = self._get_config("health_check_interval", 300)
 
     def _init_components(self):
         """初始化组件"""
@@ -66,7 +68,12 @@ class DataSourceManager(BaseManager):
 
     def _initialize_sources(self):
         """初始化数据源"""
-        data_sources_config = self._get_config("data_sources", {})
+        # 由于设置了config_prefix为"data_sources"，直接获取各个数据源配置
+        data_sources_config = {
+            "akshare": self._get_config("akshare", {}),
+            "baostock": self._get_config("baostock", {}),
+            "qstock": self._get_config("qstock", {}),
+        }
 
         for source_name, source_config in data_sources_config.items():
             if source_name in self.adapter_classes and source_config.get(
@@ -112,7 +119,6 @@ class DataSourceManager(BaseManager):
 
         return self.sources.get(source_name)
 
-    @unified_error_handler(return_dict=True)
     def get_available_sources(self) -> List[str]:
         """获取可用的数据源列表"""
         available = []
@@ -121,7 +127,6 @@ class DataSourceManager(BaseManager):
                 available.append(name)
         return available
 
-    @unified_error_handler(return_dict=True)
     def get_source_priorities(
         self, market: str, frequency: str, data_type: str
     ) -> List[str]:
@@ -158,12 +163,8 @@ class DataSourceManager(BaseManager):
         elif data_type == "calendar":
             return ["baostock", "akshare"]
         else:
-            available_result = self.get_available_sources()
-            return (
-                available_result["data"]
-                if isinstance(available_result, dict)
-                else available_result
-            )
+            # 返回所有可用的数据源作为默认优先级
+            return self.get_available_sources()
 
     @unified_error_handler(return_dict=True)
     def get_data_with_fallback(

@@ -91,7 +91,7 @@ class TestNewArchitecture:
 
         # 验证配置前缀
         assert hasattr(ds_manager, "_config_prefix"), "应该有配置前缀"
-        expected_prefix = "datasource"
+        expected_prefix = "data_sources"
         actual_prefix = ds_manager._config_prefix
         assert (
             actual_prefix == expected_prefix
