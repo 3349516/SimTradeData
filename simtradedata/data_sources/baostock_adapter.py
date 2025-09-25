@@ -595,7 +595,7 @@ class BaoStockAdapter(BaseDataSource):
             calendar_list.append(
                 {
                     "trade_date": row["calendar_date"],
-                    "is_trading": int(row["is_trading"]),
+                    "is_trading": int(row["is_trading_day"]),
                     "market": "SZ",  # BaoStock主要是A股
                 }
             )

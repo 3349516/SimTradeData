@@ -249,7 +249,6 @@ class DataSourceManager(BaseManager):
                 "get_data_with_fallback",
                 e,
                 source_name=source_name,
-                method_name=method_name,
             )
             raise
 
