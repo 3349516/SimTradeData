@@ -441,7 +441,7 @@ class DataSourceManager(BaseManager):
     def get_trade_calendar(
         self,
         start_date: Union[str, date],
-        end_date: Union[str, date] = None,
+        end_date: Optional[Union[str, date]] = None,
         market: str = "SZ",
     ) -> List[Dict[str, Any]]:
         """获取交易日历"""
@@ -581,7 +581,7 @@ class DataSourceManager(BaseManager):
         """获取管理器状态"""
         available_sources_result = self.get_available_sources()
         available_sources = (
-            available_sources_result["data"]
+            available_sources_result.get("data", [])
             if isinstance(available_sources_result, dict)
             else available_sources_result
         )

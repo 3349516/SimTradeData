@@ -6,6 +6,8 @@
 
 # 标准库导入
 import logging
+import re
+import uuid
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +29,26 @@ from .incremental import IncrementalSync
 from .validator import DataValidator
 
 logger = logging.getLogger(__name__)
+
+
+# 常量定义
+class SyncConstants:
+    """同步相关常量"""
+
+    # 数据验证范围
+    MIN_REPORT_YEAR = 1990
+    MAX_PE_RATIO = 1000
+    MAX_PB_RATIO = 100
+
+    # 数字单位转换
+    WAN_MULTIPLIER = 10000
+    YI_MULTIPLIER = 100000000
+
+    # 日期格式
+    DATE_FORMAT = "%Y-%m-%d"
+
+    # 重试次数
+    DEFAULT_MAX_RETRIES = 3
 
 
 class DataQualityValidator:
@@ -62,26 +84,24 @@ class DataQualityValidator:
 
         # PE/PB应该为正数且在合理范围内，市值应该大于0
         return (
-            (pe_ratio and 0 < pe_ratio < 1000)
-            or (pb_ratio and 0 < pb_ratio < 100)
+            (pe_ratio and 0 < pe_ratio < SyncConstants.MAX_PE_RATIO)
+            or (pb_ratio and 0 < pb_ratio < SyncConstants.MAX_PB_RATIO)
             or (market_cap and market_cap > 0)
         )
 
     @staticmethod
-    def is_valid_report_date(report_date: str, symbol: str = None) -> bool:
+    def is_valid_report_date(report_date: str, symbol: Optional[str] = None) -> bool:
         """验证报告期有效性"""
         try:
-            from datetime import datetime
-
-            report_dt = datetime.strptime(report_date, "%Y-%m-%d")
+            report_dt = datetime.strptime(report_date, SyncConstants.DATE_FORMAT)
             current_dt = datetime.now()
 
             # 报告期不能是未来日期
             if report_dt > current_dt:
                 return False
 
-            # 报告期不能太久远（比如1990年以前）
-            if report_dt.year < 1990:
+            # 报告期不能太久远
+            if report_dt.year < SyncConstants.MIN_REPORT_YEAR:
                 return False
 
             return True
@@ -127,6 +147,10 @@ class SyncManager(BaseManager):
             processing_engine: 数据处理引擎
             config: 配置对象
         """
+        # 初始化缓存
+        self._market_cache = {}
+        self._stock_info_cache = {}
+
         super().__init__(
             config=config,
             db_manager=db_manager,
@@ -141,6 +165,11 @@ class SyncManager(BaseManager):
         self.enable_auto_gap_fix = self._get_config("auto_gap_fix", True)
         self.enable_validation = self._get_config("enable_validation", True)
         self.max_gap_fix_days = self._get_config("max_gap_fix_days", 7)
+
+        # 性能优化配置
+        self.batch_size = self._get_config("batch_size", 100)
+        self.enable_cache = self._get_config("enable_cache", True)
+        self.cache_ttl = self._get_config("cache_ttl", 3600)  # 1小时
 
     def _init_components(self):
         """初始化子组件"""
@@ -175,13 +204,17 @@ class SyncManager(BaseManager):
         Returns:
             Any: 拆包后的实际数据
         """
+        if not data:
+            return None
+
         # 如果是标准成功响应格式 {"success": True, "data": ..., "count": ...}
         if isinstance(data, dict) and "success" in data:
             if data.get("success"):
                 return data.get("data")
             else:
-                # 失败响应，返回 None 或空
-                self.logger.warning(f"数据源返回失败: {data.get('error', '未知错误')}")
+                # 失败响应，记录错误并返回None
+                error_msg = data.get("error", "未知错误")
+                self.logger.warning(f"数据源返回失败: {error_msg}")
                 return None
 
         # 如果是简单包装格式 {"data": ...} (没有success字段)
@@ -189,8 +222,7 @@ class SyncManager(BaseManager):
             return data["data"]
 
         # 否则直接返回原数据
-        else:
-            return data
+        return data
 
     @unified_error_handler(return_dict=True)
     def run_full_sync(
@@ -261,10 +293,11 @@ class SyncManager(BaseManager):
             # 如果有股票列表，检查断点续传条件
             if symbols:
                 # 检查是否有任何已完成的扩展数据记录
-                completed_count = self.db_manager.fetchone(
+                result = self.db_manager.fetchone(
                     "SELECT COUNT(*) as count FROM extended_sync_status WHERE target_date = ? AND status = 'completed'",
                     (str(target_date),),
-                )["count"]
+                )
+                completed_count = result["count"] if result else 0
 
                 if completed_count > 0:  # 如果有已完成记录，执行断点续传
                     self.logger.info(
@@ -1377,15 +1410,68 @@ class SyncManager(BaseManager):
             }
 
     def _determine_market(self, symbol: str) -> str:
-        """确定股票市场"""
-        if symbol.startswith("0") or symbol.startswith("3"):
-            return "SZ"
-        elif symbol.startswith("6") or symbol.startswith("9"):
-            return "SS"
-        elif symbol.startswith("8"):
-            return "BJ"  # 北交所
+        """
+        确定股票市场（带缓存）
+
+        Args:
+            symbol: 股票代码（纯数字，不含后缀）
+
+        Returns:
+            市场代码: SS(上海) / SZ(深圳) / BJ(北交所)
+        """
+        # 使用缓存提升性能
+        if self.enable_cache and symbol in self._market_cache:
+            return self._market_cache[symbol]
+
+        if not symbol or not isinstance(symbol, str):
+            result = "SZ"  # 默认深圳
         else:
-            return "SZ"  # 默认深圳
+            # 清理股票代码，移除可能的后缀
+            clean_symbol = symbol.split(".")[0].strip()
+
+            if not clean_symbol or not clean_symbol.isdigit():
+                result = "SZ"  # 默认深圳
+            # 上海证券交易所
+            elif clean_symbol.startswith(("600", "601", "603", "605", "688", "689")):
+                result = "SS"
+            # 深圳证券交易所
+            elif clean_symbol.startswith(("000", "001", "002", "003", "300", "301")):
+                result = "SZ"
+            # 北京证券交易所
+            elif clean_symbol.startswith(("8", "43", "83")):
+                result = "BJ"
+            else:
+                # 其他情况，根据首位数字判断
+                first_char = clean_symbol[0]
+                if first_char == "6":
+                    result = "SS"  # 上海
+                elif first_char in ["0", "3"]:
+                    result = "SZ"  # 深圳
+                elif first_char == "8":
+                    result = "BJ"  # 北交所
+                else:
+                    result = "SZ"  # 默认深圳
+
+        # 缓存结果
+        if self.enable_cache:
+            self._market_cache[symbol] = result
+
+        return result
+
+    def clear_cache(self):
+        """清理缓存"""
+        if hasattr(self, "_market_cache"):
+            self._market_cache.clear()
+        if hasattr(self, "_stock_info_cache"):
+            self._stock_info_cache.clear()
+        self.logger.debug("缓存已清理")
+
+    def get_cache_stats(self) -> Dict[str, int]:
+        """获取缓存统计信息"""
+        return {
+            "market_cache_size": len(getattr(self, "_market_cache", {})),
+            "stock_info_cache_size": len(getattr(self, "_stock_info_cache", {})),
+        }
 
     def _fetch_detailed_stock_info(self, symbol: str):
         """获取股票详细信息（股本、上市日期等）"""
@@ -1461,48 +1547,102 @@ class SyncManager(BaseManager):
             self.logger.error(f"获取 {symbol} 详细信息失败: {e}")
             self.logger.debug(f"详细错误信息: {symbol}", exc_info=True)
 
-    def _safe_extract_number(self, value, default=None):
-        """安全提取数字"""
-        try:
-            if value is None or value == "" or str(value).lower() == "nan":
-                return default
-            # 移除可能的单位（万、亿等）
-            str_value = str(value).replace(",", "").replace("万", "").replace("亿", "")
-            if "万" in str(value):
-                return float(str_value) * 10000
-            elif "亿" in str(value):
-                return float(str_value) * 100000000
-            else:
-                return float(str_value)
-        except (ValueError, TypeError):
+    def _safe_extract_number(
+        self, value: Any, default: Optional[float] = None
+    ) -> Optional[float]:
+        """
+        安全提取数字，支持中文单位转换
+
+        Args:
+            value: 待转换的值
+            default: 默认值
+
+        Returns:
+            转换后的数字或默认值
+        """
+        if value is None or value == "":
             return default
 
-    def _safe_extract_date(self, value, default=None):
-        """安全提取日期"""
         try:
-            if value is None or value == "" or str(value).lower() == "nan":
-                return default
-            # 尝试解析日期格式
-            import re
+            str_value = str(value).strip()
 
-            str_value = str(value)
-            # 匹配 YYYY-MM-DD 格式
-            if re.match(r"\d{4}-\d{2}-\d{2}", str_value):
-                return str_value[:10]
-            # 匹配 YYYYMMDD 格式
-            elif re.match(r"\d{8}", str_value):
-                return f"{str_value[:4]}-{str_value[4:6]}-{str_value[6:8]}"
-            else:
+            # 处理特殊值
+            if str_value.lower() in ["nan", "null", "none", "-", "--"]:
                 return default
-        except Exception:
+
+            # 移除逗号分隔符
+            str_value = str_value.replace(",", "")
+
+            # 处理中文单位
+            multiplier = 1
+            if "万" in str_value:
+                str_value = str_value.replace("万", "")
+                multiplier = SyncConstants.WAN_MULTIPLIER
+            elif "亿" in str_value:
+                str_value = str_value.replace("亿", "")
+                multiplier = SyncConstants.YI_MULTIPLIER
+
+            # 转换为浮点数
+            number = float(str_value)
+            return number * multiplier
+
+        except (ValueError, TypeError) as e:
+            self.logger.debug(f"数字转换失败: {value} -> {e}")
+            return default
+
+    def _safe_extract_date(
+        self, value: Any, default: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        安全提取日期，统一格式化为YYYY-MM-DD
+
+        Args:
+            value: 待转换的日期值
+            default: 默认值
+
+        Returns:
+            格式化后的日期字符串或默认值
+        """
+        if value is None or value == "":
+            return default
+
+        try:
+            str_value = str(value).strip()
+
+            # 处理特殊值
+            if str_value.lower() in ["nan", "null", "none", "-", "--"]:
+                return default
+
+            # 匹配常见日期格式
+            date_patterns = [
+                r"(\d{4})-(\d{1,2})-(\d{1,2})",  # YYYY-MM-DD
+                r"(\d{4})/(\d{1,2})/(\d{1,2})",  # YYYY/MM/DD
+                r"(\d{4})\.(\d{1,2})\.(\d{1,2})",  # YYYY.MM.DD
+                r"(\d{4})(\d{2})(\d{2})",  # YYYYMMDD
+            ]
+
+            for pattern in date_patterns:
+                match = re.match(pattern, str_value)
+                if match:
+                    year, month, day = match.groups()
+                    # 标准化格式
+                    try:
+                        parsed_date = datetime(int(year), int(month), int(day))
+                        return parsed_date.strftime(SyncConstants.DATE_FORMAT)
+                    except ValueError:
+                        continue
+
+            self.logger.debug(f"无法解析日期格式: {value}")
+            return default
+
+        except (ValueError, TypeError) as e:
+            self.logger.debug(f"日期转换失败: {value} -> {e}")
             return default
 
     def _sync_extended_data(
         self, symbols: List[str], target_date: date, progress_bar=None
     ) -> Dict[str, Any]:
         """增量同步扩展数据（财务数据、估值数据等）"""
-        import uuid
-
         session_id = str(uuid.uuid4())
         self.logger.info(f"🔄 开始扩展数据同步: {len(symbols)}只股票")
 
@@ -1515,16 +1655,15 @@ class SyncManager(BaseManager):
             "session_id": session_id,
         }
 
-        # 直接使用传入的symbols参数，因为已经经过_get_extended_data_symbols_to_process过滤
-        self.logger.info(f"📊 开始处理: {len(symbols)}只股票")
-
         if not symbols:
             self.logger.info("✅ 没有股票需要处理")
             if progress_bar:
                 progress_bar.update(0)
             return result
 
-        # 处理每只股票（添加事务保护）
+        self.logger.info(f"📊 开始处理: {len(symbols)}只股票")
+
+        # 批量处理每只股票（添加事务保护）
         for i, symbol in enumerate(symbols):
             self.logger.debug(f"处理 {symbol} ({i+1}/{len(symbols)})")
 
@@ -1535,7 +1674,7 @@ class SyncManager(BaseManager):
                 )
 
                 # 更新结果统计
-                if symbol_result["success"]:
+                if symbol_result.get("success", False):
                     result["financials_count"] += symbol_result.get(
                         "financials_count", 0
                     )
@@ -1552,9 +1691,11 @@ class SyncManager(BaseManager):
 
             except Exception as e:
                 self.logger.error(f"同步股票失败: {symbol} - {e}")
+                self.logger.debug(f"同步股票详细错误: {symbol}", exc_info=True)
                 result["failed_symbols"] += 1
                 result["processed_symbols"] += 1
 
+            # 更新进度条
             if progress_bar:
                 progress_bar.update(1)
 
@@ -1588,9 +1729,9 @@ class SyncManager(BaseManager):
                 ipo_date_str = stock_info.get("list_date", "")
                 if ipo_date_str:
                     try:
-                        from datetime import datetime
-
-                        ipo_date = datetime.strptime(ipo_date_str, "%Y-%m-%d").date()
+                        ipo_date = datetime.strptime(
+                            ipo_date_str, SyncConstants.DATE_FORMAT
+                        ).date()
 
                         if ipo_date > target_date:
                             # 股票尚未上市，这是预期情况
@@ -1722,30 +1863,35 @@ class SyncManager(BaseManager):
                 if baostock_source and baostock_source.is_connected():
                     try:
                         valuation_records = baostock_source.get_valuation_data(
-                            symbol, str(target_date), str(target_date)
+                            symbol, str(target_date)
                         )
 
                         if valuation_records:
                             for record in valuation_records:
+                                # 确保 record 是字典类型
+                                if not isinstance(record, dict):
+                                    continue
+
                                 # 检查是否已存在该记录
+                                record_date = record.get("date", "")
                                 existing = self.db_manager.fetchone(
                                     "SELECT COUNT(*) as count FROM valuations WHERE symbol = ? AND date = ?",
-                                    (symbol, record["date"]),
+                                    (symbol, record_date),
                                 )
 
-                                if existing["count"] == 0:
+                                if existing and existing["count"] == 0:
                                     self.db_manager.execute(
                                         """INSERT INTO valuations
                                         (symbol, date, pe_ratio, pb_ratio, ps_ratio, pcf_ratio, source)
                                         VALUES (?, ?, ?, ?, ?, ?, ?)""",
                                         (
                                             symbol,
-                                            record["date"],
+                                            record_date,
                                             record.get("pe_ratio"),
                                             record.get("pb_ratio"),
                                             record.get("ps_ratio"),
                                             record.get("pcf_ratio"),
-                                            record["source"],
+                                            record.get("source", ""),
                                         ),
                                     )
                                     result["valuations_count"] += 1
