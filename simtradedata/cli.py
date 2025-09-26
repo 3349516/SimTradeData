@@ -44,7 +44,9 @@ class SimTradeDataCLI:
         self.db_manager = DatabaseManager(
             self.config.get("database.path", "data/simtradedata.db")
         )
-        self.data_source_manager = DataSourceManager(self.config)
+        self.data_source_manager = DataSourceManager(
+            self.config, db_manager=self.db_manager
+        )
         self.processing_engine = DataProcessingEngine(
             self.db_manager, self.data_source_manager, self.config
         )

@@ -828,15 +828,20 @@ class SyncManager(BaseManager):
                 has_valuation = row["has_valuation"]
                 marked_completed = row["marked_completed"]
 
-                # 评估实际完成状态（分级标准）
-                if has_financial:
-                    actual_status = "completed"  # 有财务数据就算完成
+                # 评估实际完成状态（修复版本）
+                # 关键修复：没有同步记录的股票必须处理，无论是否有数据
+                if not marked_completed:
+                    # 没有同步记录，必须处理
+                    actual_status = "pending"
+                    stats["missing"] += 1
+                elif has_financial:
+                    actual_status = "completed"  # 有财务数据且已标记完成
                     stats["completed"] += 1
                 elif has_valuation:
-                    actual_status = "partial"  # 只有估值数据算部分完成
+                    actual_status = "partial"  # 只有估值数据
                     stats["partial"] += 1
                 else:
-                    actual_status = "pending"  # 都没有需要处理
+                    actual_status = "pending"  # 标记完成但没有数据，需要重新处理
                     stats["missing"] += 1
 
                 # 智能状态修复：修复而不是删除
@@ -1177,25 +1182,6 @@ class SyncManager(BaseManager):
                     "updated_stocks": 0,
                 }
 
-            # 性能优化：限制处理数量，优先处理主板股票
-            if len(stock_info) > 1000:
-                # 按重要性排序：主板股票优先
-                def get_priority(stock):
-                    symbol = stock.get("symbol", "")
-                    if symbol.startswith("60"):  # 沪市主板
-                        return 1
-                    elif symbol.startswith("00"):  # 深市主板
-                        return 2
-                    elif symbol.startswith("30"):  # 创业板
-                        return 3
-                    else:
-                        return 4
-
-                stock_info.sort(key=get_priority)
-                # 只处理前800只重要股票，减少API调用
-                stock_info = stock_info[:800]
-                self.logger.info(f"🎯 优化处理：只更新前 {len(stock_info)} 只重要股票")
-
             # 批量处理股票数据 - 性能优化
             new_stocks = 0
             updated_stocks = 0
@@ -1408,31 +1394,49 @@ class SyncManager(BaseManager):
             response = self.data_source_manager.get_stock_info(symbol)
 
             if not response or not isinstance(response, dict):
+                self.logger.warning(
+                    f"获取股票详细信息失败: {symbol} - 响应为空或格式错误"
+                )
                 return
 
-            # 提取嵌套的数据
-            detail_info = None
-            if response.get("success") and response.get("data"):
-                data = response.get("data")
-                if data.get("success") and data.get("data"):
-                    detail_info = data.get("data")
-                else:
-                    detail_info = data
-            else:
-                detail_info = response
+            # 双重解包数据（因为是嵌套格式）
+            detail_info = self._extract_data_safely(response)
+            if (
+                isinstance(detail_info, dict)
+                and detail_info.get("success")
+                and "data" in detail_info
+            ):
+                detail_info = self._extract_data_safely(detail_info)
 
             if not detail_info or not isinstance(detail_info, dict):
+                self.logger.warning(f"获取股票详细信息失败: {symbol} - 解包后数据为空")
                 return
 
-            # 提取字段信息
-            total_shares = detail_info.get("total_shares", 0)
-            float_shares = detail_info.get("float_shares", 0)
+            # 提取字段信息（适配不同数据源的字段名）
+            total_shares = detail_info.get("total_shares", 0) or 0
+            float_shares = detail_info.get("float_shares", 0) or 0
             list_date = detail_info.get("list_date", "")
-            industry_l1 = detail_info.get("industry_l1", "")
+
+            # 处理行业信息 - 优先使用具体的l1/l2字段
+            industry_l1 = detail_info.get("industry_l1", "") or detail_info.get(
+                "industry", ""
+            )
             industry_l2 = detail_info.get("industry_l2", "")
 
-            # 更新股票详细信息
-            if total_shares or float_shares or list_date or industry_l1 or industry_l2:
+            self.logger.debug(
+                f"提取到股票信息: {symbol} - list_date={list_date}, industry_l1={industry_l1}, industry_l2={industry_l2}"
+            )
+
+            # 只要有任何一个有效字段就更新（修复条件判断）
+            has_data = (
+                (total_shares and total_shares > 0)
+                or (float_shares and float_shares > 0)
+                or (list_date and list_date.strip())
+                or (industry_l1 and industry_l1.strip())
+                or (industry_l2 and industry_l2.strip())
+            )
+
+            if has_data:
                 self.db_manager.execute(
                     """
                     UPDATE stocks
@@ -1441,18 +1445,21 @@ class SyncManager(BaseManager):
                     WHERE symbol = ?
                     """,
                     (
-                        total_shares if total_shares else None,
-                        float_shares if float_shares else None,
-                        list_date if list_date else None,
-                        industry_l1 if industry_l1 else None,
-                        industry_l2 if industry_l2 else None,
+                        total_shares if total_shares > 0 else None,
+                        float_shares if float_shares > 0 else None,
+                        list_date if list_date and list_date.strip() else None,
+                        industry_l1 if industry_l1 and industry_l1.strip() else None,
+                        industry_l2 if industry_l2 and industry_l2.strip() else None,
                         symbol,
                     ),
                 )
-                self.logger.debug(f"更新股票详细信息: {symbol}")
+                self.logger.info(f"✅ 更新股票详细信息: {symbol}")
+            else:
+                self.logger.warning(f"⚠️  股票详细信息为空: {symbol}")
 
         except Exception as e:
-            self.logger.debug(f"获取 {symbol} 详细信息失败: {e}")
+            self.logger.error(f"获取 {symbol} 详细信息失败: {e}")
+            self.logger.debug(f"详细错误信息: {symbol}", exc_info=True)
 
     def _safe_extract_number(self, value, default=None):
         """安全提取数字"""
@@ -1592,10 +1599,10 @@ class SyncManager(BaseManager):
                             )
                             return
                         else:
-                            # 股票已上市但数据获取失败
+                            # 股票已上市但数据获取失败，这可能是数据源问题或股票状态异常
                             failure_detail = ", ".join(failure_reasons)
                             self.logger.warning(
-                                f"数据获取失败: {symbol} ({failure_detail}) - 股票已于{ipo_date_str}上市"
+                                f"数据获取失败: {symbol} ({failure_detail}) - 股票已上市但无可用数据"
                             )
                             return
                     except (ValueError, TypeError):
