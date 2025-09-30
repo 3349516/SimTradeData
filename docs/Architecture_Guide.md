@@ -109,24 +109,40 @@ CREATE TABLE valuations (
     date DATE NOT NULL,
     pe_ratio REAL,                    -- 市盈率
     pb_ratio REAL,                    -- 市净率
-    market_cap REAL,                  -- 市值
-    -- ... 更多估值指标
+    ps_ratio REAL,                    -- 市销率
+    pcf_ratio REAL,                   -- 市现率
+    source TEXT,                      -- 数据源
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- 注意：市值字段已移除，改为实时计算
+    -- market_cap 和 circulating_cap 通过股价*股本实时计算
     PRIMARY KEY (symbol, date)
 );
+
+-- 索引
+CREATE INDEX idx_valuations_symbol_date ON valuations(symbol, date DESC);
+CREATE INDEX idx_valuations_date ON valuations(date DESC);
+CREATE INDEX idx_valuations_created_at ON valuations(created_at DESC);
 ```
 
-#### 4. quality_score - 数据质量监控
+#### 4. data_source_quality - 数据质量监控
 ```sql
-CREATE TABLE quality_score (
-    source TEXT NOT NULL,
+CREATE TABLE data_source_quality (
+    source_name TEXT NOT NULL,        -- 数据源名称（修正：原名 source）
     symbol TEXT,
     data_type TEXT NOT NULL,
     date DATE NOT NULL,
     success_rate REAL DEFAULT 100,
     completeness_rate REAL DEFAULT 100,
-    -- ... 更多质量指标
-    PRIMARY KEY (source, symbol, data_type, date)
+    accuracy_score REAL DEFAULT 100,
+    timeliness_score REAL DEFAULT 100,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (source_name, symbol, data_type, date)
 );
+
+-- 索引
+CREATE INDEX idx_data_quality_source ON data_source_quality(source_name, data_type, date DESC);
+CREATE INDEX idx_data_quality_symbol ON data_source_quality(symbol, source_name);
 ```
 
 ### 架构优势
