@@ -231,23 +231,24 @@ class SimTradeDataCLI:
             logger.info(f"   股票数量: {len(symbols) if symbols else '全部'}")
             logger.info(f"   数据频率: {', '.join(frequencies)}")
 
-            # 执行缺口检测和修复
-            result = self.sync_manager.run_gap_detection_and_fix(
+            # 执行缺口检测
+            detection_result = self.sync_manager.gap_detector.detect_all_gaps(
                 start_date=start_date,
                 end_date=end_date,
                 symbols=symbols,
                 frequencies=frequencies,
             )
 
-            # 输出结果
-            detection_result = result.get("detection_result", {})
-            fix_result = result.get("fix_result", {})
+            # 如果发现缺口，执行自动修复
+            fix_result = {}
+            if detection_result.get("summary", {}).get("total_gaps", 0) > 0:
+                fix_result = self.sync_manager._auto_fix_gaps(detection_result)
 
             detection_summary = detection_result.get("summary", {})
             logger.info(f"🔍 缺口检测结果:")
             logger.info(f"   发现缺口: {detection_summary.get('total_gaps', 0)} 个")
             logger.info(
-                f"   涉及股票: {detection_summary.get('affected_symbols', 0)} 只"
+                f"   涉及股票: {detection_summary.get('symbols_with_gaps', 0)} 只"
             )
 
             if fix_result:
@@ -287,7 +288,7 @@ class SimTradeDataCLI:
             """
             status = self.db_manager.fetchone(sql, (symbol, frequency))
 
-            if status:
+            if status and status["last_data_date"]:
                 last_date = datetime.strptime(
                     status["last_data_date"], "%Y-%m-%d"
                 ).date()
