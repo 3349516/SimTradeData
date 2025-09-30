@@ -3,16 +3,17 @@
 **报告生成时间**: 2025-09-30
 **项目版本**: v1.0.0
 **测试框架**: pytest 8.4.2
-**测试总数**: 150项测试用例
+**测试总数**: 189项测试用例（通过） + 9项跳过
 
 ## 📊 测试概况
 
 ### 整体测试统计
-- **测试文件总数**: 22个
-- **测试用例总数**: 150项
-- **测试通过率**: ✅ 100% (150 passed)
-- **跳过测试**: 0项
-- **测试覆盖模块**: 9个核心模块
+- **测试文件总数**: 24个
+- **测试用例总数**: 198项
+- **测试通过数**: 189项
+- **测试通过率**: ✅ 95.5% (189 passed, 9 skipped)
+- **跳过测试**: 9项（外部依赖相关）
+- **测试覆盖模块**: 10个核心模块
 
 ## 🎯 模块测试覆盖详情
 
@@ -156,6 +157,60 @@
 #### TestAlertIntegration (2个测试)
 - ✅ `test_full_alert_workflow` - 完整告警流程
 - ✅ `test_alert_notification_pipeline` - 告警通知管道
+
+### 6. 数据源适配器模块 (data_sources/) - 95% 覆盖 ⭐ 新增
+**测试文件**: 2个文件，39个测试用例
+
+#### TestBaseDataSource (18个测试)
+- ✅ `test_initialization` - 基类初始化
+- ✅ `test_default_config` - 默认配置
+- ✅ `test_connect_disconnect` - 连接和断开
+- ✅ `test_normalize_symbol` - 股票代码标准化
+- ✅ `test_normalize_symbol_invalid` - 无效代码处理
+- ✅ `test_normalize_date` - 日期标准化
+- ✅ `test_normalize_date_invalid` - 无效日期处理
+- ✅ `test_validate_frequency` - 频率验证
+- ✅ `test_validate_frequency_invalid` - 无效频率处理
+- ✅ `test_get_capabilities` - 获取能力信息
+- ✅ `test_check_rate_limit` - 频率限制检查
+- ✅ `test_check_rate_limit_sleep` - 频率限制等待
+- ✅ `test_retry_request_success` - 请求重试成功
+- ✅ `test_retry_request_failure_then_success` - 重试后成功
+- ✅ `test_retry_request_all_failures` - 所有重试失败
+- ✅ `test_context_manager` - 上下文管理器
+- ✅ `test_string_representation` - 字符串表示
+- ✅ `test_optional_methods_not_implemented` - 可选方法未实现
+
+#### TestDataSourceExceptions (3个测试)
+- ✅ `test_data_source_error` - 基础异常
+- ✅ `test_connection_error` - 连接异常
+- ✅ `test_data_error` - 数据异常
+
+#### TestDataSourceManager (9个测试)
+- ✅ `test_manager_initialization` - 管理器初始化
+- ✅ `test_manager_with_minimal_config` - 最小配置初始化
+- ✅ `test_adapter_registration` - 适配器注册
+- ✅ `test_get_enabled_sources` - 获取启用的数据源
+- ✅ `test_get_available_sources` - 获取可用数据源列表
+- ✅ `test_get_source` - 获取特定数据源
+- ✅ `test_health_check_all` - 检查所有数据源健康状态
+- ✅ `test_get_status` - 获取管理器状态
+- ✅ `test_custom_adapter_registration` - 自定义适配器注册
+
+#### TestDataSourceManagerIntegration (3个测试)
+- ✅ `test_full_lifecycle` - 完整生命周期
+- ✅ `test_error_handling` - 错误处理
+- ✅ `test_concurrent_access` - 并发访问
+
+#### TestDataSourceManagerConfiguration (3个测试)
+- ✅ `test_config_override` - 配置覆盖
+- ✅ `test_default_config_values` - 默认配置值
+- ✅ `test_source_specific_config` - 数据源特定配置
+
+#### TestDataSourceManagerErrorScenarios (3个测试)
+- ✅ `test_invalid_source_name` - 无效数据源名称
+- ✅ `test_empty_sources` - 无数据源情况
+- ✅ `test_health_check_with_no_sources` - 无数据源时的健康检查
 
 ## 📈 测试类型分布
 
