@@ -2,12 +2,14 @@
 技术指标计算器
 
 负责计算各种技术指标，如移动平均线、MACD、RSI等。
+优化版本：使用向量化计算、缓存机制和批量处理提升性能。
 """
 
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
+import numpy as np
 import pandas as pd
 
 from ..config import Config
@@ -17,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class TechnicalIndicators:
-    """技术指标计算器"""
+    """技术指标计算器（优化版）"""
 
     def __init__(self, config: Config = None):
         """
@@ -45,7 +47,11 @@ class TechnicalIndicators:
         # 计算所需的历史数据天数
         self.history_days = max(self.ma_periods) + 10 if self.ma_periods else 70
 
-        logger.info("技术指标计算器初始化完成")
+        # 数据缓存：key = f"{symbol}_{date}", value = indicators
+        self._indicator_cache = {}
+        self._cache_max_size = 1000  # 最多缓存1000个股票的指标
+
+        logger.info("技术指标计算器初始化完成（优化版）")
 
     def calculate_indicators(
         self,
@@ -54,7 +60,7 @@ class TechnicalIndicators:
         db_manager: DatabaseManager = None,
     ) -> Dict[str, Any]:
         """
-        计算技术指标
+        计算技术指标（优化版，支持缓存）
 
         Args:
             ptrade_data: PTrade格式数据
@@ -68,11 +74,20 @@ class TechnicalIndicators:
             return ptrade_data
 
         try:
+            current_date = ptrade_data.get("date")
+            cache_key = f"{symbol}_{current_date}"
+
+            # 检查缓存
+            if cache_key in self._indicator_cache:
+                logger.debug(f"使用缓存的指标: {symbol}")
+                ptrade_data.update(self._indicator_cache[cache_key])
+                return ptrade_data
+
             logger.debug(f"开始计算技术指标: {symbol}")
 
             # 获取历史数据用于计算指标
             historical_data = self._get_historical_data(
-                symbol, ptrade_data.get("date"), db_manager
+                symbol, current_date, db_manager
             )
 
             if not historical_data:
@@ -81,7 +96,7 @@ class TechnicalIndicators:
 
             # 添加当前数据到历史数据
             current_data = {
-                "date": ptrade_data.get("date"),
+                "date": current_date,
                 "close": ptrade_data.get("close", 0),
                 "high": ptrade_data.get("high", 0),
                 "low": ptrade_data.get("low", 0),
@@ -89,40 +104,30 @@ class TechnicalIndicators:
             }
             historical_data.append(current_data)
 
-            # 转换为DataFrame
+            # 转换为DataFrame并进行向量化计算
             df = pd.DataFrame(historical_data)
             df["close"] = pd.to_numeric(df["close"], errors="coerce")
+            df["high"] = pd.to_numeric(df["high"], errors="coerce")
+            df["low"] = pd.to_numeric(df["low"], errors="coerce")
             df = df.dropna()
 
-            if len(df) < 5:  # 简化：只需要5天数据
+            if len(df) < 5:  # 至少需要5天数据
                 logger.debug(f"历史数据不足，无法计算指标: {symbol}, 数据量: {len(df)}")
                 return ptrade_data
 
-            # 计算各种指标
-            indicators = {}
-
-            if self.enable_ma:
-                ma_indicators = self._calculate_moving_averages(df)
-                indicators.update(ma_indicators)
-
-            if self.enable_ema:
-                ema_indicators = self._calculate_ema(df)
-                indicators.update(ema_indicators)
-
-            if self.enable_macd:
-                macd_indicators = self._calculate_macd(df)
-                indicators.update(macd_indicators)
-
-            if self.enable_rsi:
-                rsi_indicators = self._calculate_rsi(df)
-                indicators.update(rsi_indicators)
-
-            if self.enable_kdj:
-                kdj_indicators = self._calculate_kdj(df)
-                indicators.update(kdj_indicators)
+            # 使用向量化计算所有指标
+            indicators = self._calculate_all_indicators_vectorized(df)
 
             # 将指标添加到PTrade数据中
             ptrade_data.update(indicators)
+
+            # 缓存结果（LRU策略）
+            if len(self._indicator_cache) >= self._cache_max_size:
+                # 删除最旧的缓存（FIFO）
+                oldest_key = next(iter(self._indicator_cache))
+                del self._indicator_cache[oldest_key]
+
+            self._indicator_cache[cache_key] = indicators
 
             logger.debug(f"技术指标计算完成: {symbol}, 指标数量: {len(indicators)}")
             return ptrade_data
@@ -130,6 +135,77 @@ class TechnicalIndicators:
         except Exception as e:
             logger.error(f"技术指标计算失败 {symbol}: {e}")
             return ptrade_data
+
+    def _calculate_all_indicators_vectorized(
+        self, df: pd.DataFrame
+    ) -> Dict[str, float]:
+        """
+        使用向量化计算所有指标（性能优化）
+
+        Args:
+            df: 包含历史数据的DataFrame
+
+        Returns:
+            Dict[str, float]: 所有指标的字典
+        """
+        indicators = {}
+
+        try:
+            # 预先转换为numpy数组以加速计算
+            close_prices = df["close"].values
+            high_prices = df["high"].values
+            low_prices = df["low"].values
+
+            # 1. 移动平均线 (向量化)
+            if self.enable_ma:
+                for period in self.ma_periods:
+                    if len(close_prices) >= period:
+                        ma = np.convolve(
+                            close_prices, np.ones(period) / period, mode="valid"
+                        )[-1]
+                        indicators[f"ma{period}"] = round(float(ma), 3)
+                    else:
+                        indicators[f"ma{period}"] = 0.0
+
+            # 2. 指数移动平均线
+            if self.enable_ema:
+                ema_indicators = self._calculate_ema_fast(close_prices)
+                indicators.update(ema_indicators)
+
+            # 3. MACD
+            if self.enable_macd:
+                macd_indicators = self._calculate_macd_fast(close_prices)
+                indicators.update(macd_indicators)
+
+            # 4. RSI
+            if self.enable_rsi:
+                rsi_indicators = self._calculate_rsi_fast(close_prices)
+                indicators.update(rsi_indicators)
+
+            # 5. KDJ
+            if self.enable_kdj:
+                kdj_indicators = self._calculate_kdj_fast(
+                    close_prices, high_prices, low_prices
+                )
+                indicators.update(kdj_indicators)
+
+            return indicators
+
+        except Exception as e:
+            logger.error(f"向量化指标计算失败: {e}")
+            return {}
+
+    def clear_cache(self):
+        """清空指标缓存"""
+        self._indicator_cache.clear()
+        logger.info("指标缓存已清空")
+
+    def get_cache_stats(self) -> Dict[str, int]:
+        """获取缓存统计信息"""
+        return {
+            "cache_size": len(self._indicator_cache),
+            "cache_max_size": self._cache_max_size,
+        }
 
     def _get_historical_data(
         self, symbol: str, current_date: str, db_manager: DatabaseManager = None
@@ -342,6 +418,161 @@ class TechnicalIndicators:
 
         except Exception as e:
             logger.error(f"KDJ计算失败: {e}")
+            return {"kdj_k": 50.0, "kdj_d": 50.0, "kdj_j": 50.0}
+
+    def _calculate_ema_fast(self, close_prices: np.ndarray) -> Dict[str, float]:
+        """快速计算EMA（使用numpy）"""
+        try:
+            ema_indicators = {}
+            ema_periods = [12, 26]
+
+            for period in ema_periods:
+                if len(close_prices) >= period:
+                    # 使用numpy实现指数移动平均
+                    alpha = 2 / (period + 1)
+                    ema = np.zeros(len(close_prices))
+                    ema[0] = close_prices[0]
+
+                    for i in range(1, len(close_prices)):
+                        ema[i] = alpha * close_prices[i] + (1 - alpha) * ema[i - 1]
+
+                    ema_indicators[f"ema{period}"] = round(float(ema[-1]), 3)
+                else:
+                    ema_indicators[f"ema{period}"] = 0.0
+
+            return ema_indicators
+
+        except Exception as e:
+            logger.error(f"快速EMA计算失败: {e}")
+            return {}
+
+    def _calculate_macd_fast(self, close_prices: np.ndarray) -> Dict[str, float]:
+        """快速计算MACD（使用numpy）"""
+        try:
+            if len(close_prices) < 26:
+                return {"macd_dif": 0.0, "macd_dea": 0.0, "macd_histogram": 0.0}
+
+            # 计算EMA12和EMA26
+            def calc_ema(prices, period):
+                alpha = 2 / (period + 1)
+                ema = np.zeros(len(prices))
+                ema[0] = prices[0]
+                for i in range(1, len(prices)):
+                    ema[i] = alpha * prices[i] + (1 - alpha) * ema[i - 1]
+                return ema
+
+            ema12 = calc_ema(close_prices, 12)
+            ema26 = calc_ema(close_prices, 26)
+
+            # 计算MACD线
+            macd_line = ema12 - ema26
+
+            # 计算信号线（MACD的9日EMA）
+            signal_line = calc_ema(macd_line, 9)
+
+            # 计算MACD柱状图
+            macd_histogram = macd_line - signal_line
+
+            return {
+                "macd_dif": round(float(macd_line[-1]), 4),
+                "macd_dea": round(float(signal_line[-1]), 4),
+                "macd_histogram": round(float(macd_histogram[-1]), 4),
+            }
+
+        except Exception as e:
+            logger.error(f"快速MACD计算失败: {e}")
+            return {"macd_dif": 0.0, "macd_dea": 0.0, "macd_histogram": 0.0}
+
+    def _calculate_rsi_fast(
+        self, close_prices: np.ndarray, period: int = 14
+    ) -> Dict[str, float]:
+        """快速计算RSI（使用numpy）"""
+        try:
+            if len(close_prices) < period + 1:
+                return {"rsi_12": 50.0}
+
+            # 计算价格变化
+            price_changes = np.diff(close_prices)
+
+            # 分离上涨和下跌
+            gains = np.where(price_changes > 0, price_changes, 0)
+            losses = np.where(price_changes < 0, -price_changes, 0)
+
+            # 计算平均收益和平均损失（使用卷积实现滑动窗口）
+            avg_gains = np.convolve(gains, np.ones(period) / period, mode="valid")
+            avg_losses = np.convolve(losses, np.ones(period) / period, mode="valid")
+
+            # 计算RS和RSI
+            with np.errstate(divide="ignore", invalid="ignore"):
+                rs = avg_gains / avg_losses
+                rsi = 100 - (100 / (1 + rs))
+                rsi = np.nan_to_num(rsi, nan=50.0)
+
+            return {"rsi_12": round(float(rsi[-1]), 2)}
+
+        except Exception as e:
+            logger.error(f"快速RSI计算失败: {e}")
+            return {"rsi_12": 50.0}
+
+    def _calculate_kdj_fast(
+        self,
+        close_prices: np.ndarray,
+        high_prices: np.ndarray,
+        low_prices: np.ndarray,
+        k_period: int = 9,
+        d_period: int = 3,
+    ) -> Dict[str, float]:
+        """快速计算KDJ（使用numpy）"""
+        try:
+            if len(close_prices) < k_period:
+                return {"kdj_k": 50.0, "kdj_d": 50.0, "kdj_j": 50.0}
+
+            # 计算滚动窗口的最高价和最低价
+            def rolling_window(arr, window):
+                shape = arr.shape[:-1] + (arr.shape[-1] - window + 1, window)
+                strides = arr.strides + (arr.strides[-1],)
+                return np.lib.stride_tricks.as_strided(
+                    arr, shape=shape, strides=strides
+                )
+
+            # 为滚动窗口准备数据
+            high_windows = rolling_window(high_prices, k_period)
+            low_windows = rolling_window(low_prices, k_period)
+            close_values = close_prices[k_period - 1 :]
+
+            # 计算RSV
+            high_max = np.max(high_windows, axis=1)
+            low_min = np.min(low_windows, axis=1)
+
+            with np.errstate(divide="ignore", invalid="ignore"):
+                rsv = (close_values - low_min) / (high_max - low_min) * 100
+                rsv = np.nan_to_num(rsv, nan=50.0)
+
+            # 计算K值和D值（使用指数移动平均）
+            alpha = 1 / d_period
+            k_values = np.zeros(len(rsv))
+            k_values[0] = 50.0  # K初始值
+
+            for i in range(1, len(rsv)):
+                k_values[i] = alpha * rsv[i] + (1 - alpha) * k_values[i - 1]
+
+            d_values = np.zeros(len(k_values))
+            d_values[0] = 50.0  # D初始值
+
+            for i in range(1, len(k_values)):
+                d_values[i] = alpha * k_values[i] + (1 - alpha) * d_values[i - 1]
+
+            # 计算J值
+            j_values = 3 * k_values - 2 * d_values
+
+            return {
+                "kdj_k": round(float(k_values[-1]), 2),
+                "kdj_d": round(float(d_values[-1]), 2),
+                "kdj_j": round(float(j_values[-1]), 2),
+            }
+
+        except Exception as e:
+            logger.error(f"快速KDJ计算失败: {e}")
             return {"kdj_k": 50.0, "kdj_d": 50.0, "kdj_j": 50.0}
 
     def calculate_batch_indicators(
