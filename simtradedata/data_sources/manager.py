@@ -281,9 +281,11 @@ class DataSourceManager(BaseManager):
         source = self.sources[source_name]
 
         try:
-            # 确保连接
+            # 确保连接（只在首次使用时连接，之后保持连接状态）
             if not source.is_connected():
+                self.logger.debug(f"数据源 {source_name} 未连接，正在建立连接...")
                 source.connect()
+                self.source_status[source_name]["connected"] = True
 
             # 调用方法
             method = getattr(source, method_name)

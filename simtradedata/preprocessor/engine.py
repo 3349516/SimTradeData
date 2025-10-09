@@ -159,9 +159,11 @@ class DataProcessingEngine(BaseManager):
                 result["total_records"] = len(result["processed_dates"])
             else:
                 # 不支持的数据格式（非DataFrame、非列表）
-                self.logger.warning(
-                    f"无法处理的数据格式: {type(raw_data)}, 符号: {symbol}"
-                )
+                # 注意：空字典{}是正常的"无数据"响应，不应该作为错误
+                if raw_data != {}:
+                    self.logger.warning(
+                        f"无法处理的数据格式: {type(raw_data)}, 符号: {symbol}"
+                    )
 
         except Exception as e:
             self._log_error("process_symbol_data", e, symbol=symbol)

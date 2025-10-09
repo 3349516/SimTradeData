@@ -83,6 +83,9 @@ class BaoStockAdapter(BaseDataSource):
         确保连接有效，如果会话过期则自动重连
 
         BaoStock会话在长时间运行时容易过期，需要主动检测并重连
+
+        注意：在批量同步场景下，外层（DataSourceManager）会在首次使用时建立连接，
+        之后应该保持连接状态，避免频繁login/logout
         """
         from datetime import datetime
 
@@ -92,11 +95,11 @@ class BaoStockAdapter(BaseDataSource):
             self.connect()
             return
 
-        # 检查会话是否超时
+        # 检查会话是否超时（只在超时时才重连）
         if self._last_connect_time:
             elapsed = (datetime.now() - self._last_connect_time).total_seconds()
             if elapsed > self._session_timeout:
-                logger.debug(
+                logger.warning(
                     f"BaoStock会话已超时({elapsed:.0f}秒 > {self._session_timeout}秒)，正在重新连接..."
                 )
                 self.disconnect()
@@ -149,9 +152,12 @@ class BaoStockAdapter(BaseDataSource):
                     or "用户未登录" in rs.error_msg
                     or "未登录" in rs.error_msg
                 ):
-                    logger.debug(
+                    logger.warning(
                         f"检测到BaoStock会话过期: {rs.error_msg}，尝试重新建立连接..."
                     )
+                    # 标记为未连接，强制重连
+                    self._connected = False
+                    self._last_connect_time = None
                     self.disconnect()
                     self.connect()
 
@@ -171,7 +177,7 @@ class BaoStockAdapter(BaseDataSource):
                         )
                         return {}
                 else:
-                    logger.warning(f"BaoStock查询失败 {bs_symbol}: {rs.error_msg}")
+                    logger.debug(f"BaoStock查询无数据 {bs_symbol}: {rs.error_msg}")
                     return {}
 
             # 直接使用get_data()获取DataFrame
