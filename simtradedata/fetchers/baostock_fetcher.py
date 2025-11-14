@@ -272,6 +272,9 @@ class BaoStockFetcher:
 
         df = pd.DataFrame(data_list, columns=rs.fields)
 
+        # Note: BaoStock returns 'dividOperateDate', not 'date'
+        df = df.rename(columns={"dividOperateDate": "date"})
+
         df["date"] = pd.to_datetime(df["date"])
         df["foreAdjustFactor"] = pd.to_numeric(df["foreAdjustFactor"], errors="coerce")
         df["backAdjustFactor"] = pd.to_numeric(df["backAdjustFactor"], errors="coerce")
