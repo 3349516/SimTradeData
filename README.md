@@ -2,7 +2,7 @@
 
 > 🚀 **优化的BaoStock数据下载** | 📊 **PTrade格式兼容** | ⚡ **API调用减少33%**
 
-**SimTradeData** 是为 [SimTradeLab](https://github.com/kay_ou/SimTradeLab) 设计的高效数据下载工具。通过智能的API调用优化，在单次请求中获取多种数据类型，显著提升下载效率。
+**SimTradeData** 是为 [SimTradeLab](https://github.com/kay-ou/SimTradeLab) 设计的高效数据下载工具。通过智能的API调用优化，在单次请求中获取多种数据类型，显著提升下载效率。
 
 ---
 
@@ -12,7 +12,7 @@
 
 ** 完全兼容PTrade | 回测速度提升10倍以上**
 
-[![SimTradeLab](https://img.shields.io/badge/SimTradeLab-量化回测框架-blue?style=for-the-badge)](https://github.com/kay_ou/SimTradeLab)
+[![SimTradeLab](https://img.shields.io/badge/SimTradeLab-量化回测框架-blue?style=for-the-badge)](https://github.com/kay-ou/SimTradeLab)
 
 🎯 **无需修改PTrade策略代码** | 🚀 **极速本地回测** | 💰 **零成本解决方案**
 
@@ -94,7 +94,7 @@ poetry run python scripts/download_efficient.py --incremental 30
 
 ### 3. 在 SimTradeLab 中使用
 
-生成的 HDF5 文件可直接放入 [SimTradeLab](https://github.com/kay_ou/SimTradeLab) 的数据目录使用：
+生成的 HDF5 文件可直接放入 [SimTradeLab](https://github.com/kay-ou/SimTradeLab) 的数据目录使用：
 
 ```bash
 # 复制生成的文件到 SimTradeLab 数据目录
@@ -205,7 +205,7 @@ SimTradeData/
 /{symbol}                - 后复权因子序列
 ```
 
-详细数据结构请参考: [H5_DATA_STRUCTURE.md](docs/H5_DATA_STRUCTURE.md)
+详细数据结构请参考: [PTrade API参考文档](docs/PTrade_API_mini_Reference.md)
 
 ## 🔧 配置说明
 
@@ -279,14 +279,17 @@ download_all_data(incremental_days=7)
 
 | 文档 | 说明 | 状态 |
 |------|------|------|
-| [H5_DATA_STRUCTURE.md](docs/H5_DATA_STRUCTURE.md) | HDF5文件详细数据结构 | ✅ 完成 |
-| [BaoStock_Data_Mapping.md](docs/BaoStock_Data_Mapping.md) | BaoStock数据映射方案 | ✅ 完成 |
-| [BaoStock API Reference](docs/reference/baostock_api/) | BaoStock API文档 | ✅ 完成 |
+| [PTrade API参考](docs/PTrade_API_mini_Reference.md) | PTrade数据格式和API文档 | ✅ 完成 |
+| [数据映射方案](docs/DATA_MAPPING.md) | BaoStock到PTrade格式的映射 | ✅ 完成 |
+| [BaoStock完整下载方案](docs/BaoStock_Complete_Download_Plan.md) | BaoStock数据下载详细方案 | ✅ 完成 |
+| [BaoStock API参考](docs/reference/baostock_api/) | BaoStock完整API文档 | ✅ 完成 |
+| [QStock API参考](docs/reference/qstock_api/) | QStock完整API文档 | ✅ 完成 |
+| [Mootdx API参考](docs/reference/mootdx_api/) | Mootdx完整API文档 | ✅ 完成 |
 
 ## ⚠️ 注意事项
 
 ### 推荐配置：SimTradeLab
-- **强烈推荐**: 配合 [SimTradeLab](https://github.com/kay_ou/SimTradeLab) 使用
+- **强烈推荐**: 配合 [SimTradeLab](https://github.com/kay-ou/SimTradeLab) 使用
 - **性能优势**: 相比PTrade平台回测速度提升 **10倍以上**
 - **完全免费**: 数据下载和策略回测均零成本
 - **无缝兼容**: PTrade策略代码无需修改直接运行
@@ -333,7 +336,7 @@ download_all_data(incremental_days=7)
 ## 🔗 相关链接
 
 ### 推荐使用
-- **SimTradeLab** ⭐: https://github.com/kay_ou/SimTradeLab
+- **SimTradeLab** ⭐: https://github.com/kay-ou/SimTradeLab
   - 开源Python量化回测框架
   - 完全兼容PTrade数据格式
   - **回测速度提升10倍以上**
@@ -350,7 +353,7 @@ download_all_data(incremental_days=7)
 
 ## 📮 联系方式
 
-- **Issues**: https://github.com/kay_ou/SimTradeData/issues
+- **Issues**: https://github.com/kay-ou/SimTradeData/issues
 - **合作QQ**: 3185289532
 
 ---
